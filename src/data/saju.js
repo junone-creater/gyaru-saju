@@ -84,22 +84,28 @@ export function mkRng(seed) {
 
 export function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)] }
 
+const UNKNOWN_PILLAR = { stem: '?', branch: '?', si: 0, bi: 0, unknown: true }
+
 export function calcAll(year, month, day, hour, name, gender) {
-  const seed = year * 1e6 + month * 1e4 + day * 1e2
-    + Math.abs(hour) + name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const dateUnknown = year === 0
+  const nameSeed = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const seed = dateUnknown
+    ? Math.abs(hour) + nameSeed
+    : year * 1e6 + month * 1e4 + day * 1e2 + Math.abs(hour) + nameSeed
   const rng = mkRng(seed)
 
-  const yp = yearGz(year)
-  const mp = monthGz(year, month)
-  const dp = dayGz(year, month, day)
+  const yp = dateUnknown ? { ...UNKNOWN_PILLAR } : yearGz(year)
+  const mp = dateUnknown ? { ...UNKNOWN_PILLAR } : monthGz(year, month)
+  const dp = dateUnknown ? { ...UNKNOWN_PILLAR } : dayGz(year, month, day)
   const hp = hourGz(dp.si, hour)
   const pillars = [yp, mp, dp, hp]
-  const ec   = countEl(pillars)
+  const knownPillars = pillars.filter(p => !p.unknown)
+  const ec   = countEl(knownPillars.length ? knownPillars : pillars)
   const dom  = domEl(ec)
-  const char = CHARS[dp.si]
-  const daeun = calcDaeun(yp.si, mp.si, mp.bi, gender, month, day)
-  const sj   = calcSamjae(yp.bi)
+  const char = CHARS[dp.unknown ? Math.floor(rng() * 10) : dp.si]
+  const daeun = dateUnknown ? [] : calcDaeun(yp.si, mp.si, mp.bi, gender, month, day)
+  const sj   = dateUnknown ? [] : calcSamjae(yp.bi)
   const vs   = YONGSIN[dom]
 
-  return { rng, pillars, ec, dom, char, daeun, sj, vs }
+  return { rng, pillars, ec, dom, char, daeun, sj, vs, dateUnknown }
 }

@@ -25,9 +25,9 @@ export default function ResultPage({ data, onRestart }) {
         <span className="fin-icon">☽</span>
         <div className="fin-msg">
           <strong>GYARU FORTUNE REPORT</strong>
-          <br /><br />by 루루
+          <br /><br />어때~? 완전 나 아니야?!<br />by 루루
         </div>
-        <button className="restart-btn" onClick={onRestart}>처음으로</button>
+        <button className="restart-btn" onClick={onRestart}>다시 해볼래~ 처음으로</button>
       </div>
     </div>
   )
