@@ -27,6 +27,7 @@ function _jd(y, m, d) {
     + Math.floor(yy / 400)
 }
 
+
 // ─ 입춘 날짜 근사 (연도별 2월 3~5일 사이, 4일로 고정 근사)
 // 정확한 절기 시간 없이 날짜만 비교할 때 사용
 function isBeforeLichun(m, d) {
