@@ -1,113 +1,12 @@
 <!DOCTYPE html>
 <html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>갸루 사주</title>
-  <link rel="stylesheet" href="css/common.css">
-  <link rel="stylesheet" href="css/input.css">
-</head>
-<body>
-<!-- test -->
-<!-- ══════════════════════════════
-  슬라이드 0 — 생년월일
-══════════════════════════════ -->
-<div class="slide" id="slide-0">
-  <div class="slide-bg-ph">images/bg-slide0.jpg</div>
-  <div class="slide-content">
-    <p class="slide-label">GYARU FORTUNE</p>
-    <h1 class="slide-q">생년월일을<br/>알려줘</h1>
-
-    <div class="date-row">
-      <input
-        class="date-input"
-        id="date-input"
-        type="text"
-        inputmode="numeric"
-        maxlength="10"
-        placeholder="YYYY.MM.DD"
-        oninput="onDateInput(this)"
-        autocomplete="off"
-      />
-      <div class="cal-toggle">
-        <button id="btn-solar" class="cal-btn on" onclick="setCalendar('solar')">양력</button>
-        <button id="btn-lunar" class="cal-btn off" onclick="setCalendar('lunar')">음력</button>
-      </div>
-    </div>
-    <span id="lunar-badge" class="lunar-badge">음력</span>
-
-    <button class="next-btn" id="next-0" disabled onclick="nextSlide(1)">다음 →</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════
-  슬라이드 1 — 태어난 시간
-══════════════════════════════ -->
-<div class="slide hidden-right" id="slide-1">
-  <div class="slide-bg-ph">images/bg-slide1.jpg</div>
-  <div class="slide-content">
-    <button class="back-btn" onclick="goBack()">← 뒤로</button>
-    <h1 class="slide-q">태어난 시간을<br/>알려줘</h1>
-    <div class="time-grid" id="time-grid"></div>
-    <button class="next-btn" id="next-1" disabled onclick="nextSlide(2)">다음 →</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════
-  슬라이드 2 — 이름
-══════════════════════════════ -->
-<div class="slide hidden-right" id="slide-2">
-  <div class="slide-bg-ph">images/bg-slide2.jpg</div>
-  <div class="slide-content">
-    <button class="back-btn" onclick="goBack()">← 뒤로</button>
-    <h1 class="slide-q">네 이름은<br/>뭐야?</h1>
-    <input
-      class="text-input"
-      id="name-input"
-      type="text"
-      placeholder="이름 입력"
-      maxlength="10"
-      autocomplete="off"
-    />
-    <button class="next-btn" id="next-2" disabled onclick="nextSlide(3)">다음 →</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════
-  슬라이드 3 — 성별
-══════════════════════════════ -->
-<div class="slide hidden-right" id="slide-3">
-  <div class="slide-bg-ph">images/bg-slide3.jpg</div>
-  <div class="slide-content">
-    <button class="back-btn" onclick="goBack()">← 뒤로</button>
-    <h1 class="slide-q">성별은?</h1>
-    <div class="gender-row">
-      <button class="gender-btn" onclick="selectGender('f', this)">여자</button>
-      <button class="gender-btn" onclick="selectGender('m', this)">남자</button>
-    </div>
-    <button class="next-btn" id="next-3" disabled onclick="startLoading()">사주 보기</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════
-  로딩
-══════════════════════════════ -->
-<div id="loading-phase">
-  <div class="loading-inner">
-    <div class="loading-sym">☽</div>
-    <p class="loading-msg" id="loading-msg">사주팔자를 계산하는 중...</p>
-    <div class="loading-bar"><div class="loading-bar-inner"></div></div>
-  </div>
-</div>
-
-<script src="js/data.js"></script>
-<script src="js/input.js"></script>
-<script>
-function startLoading() {
-  document.getElementById('loading-phase').classList.add('show');
-  startLoadingMsgs();
-  setTimeout(() => goToResult(), 3200);
-}
-</script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>갸루 사주</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
