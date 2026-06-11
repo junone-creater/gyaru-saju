@@ -3,7 +3,7 @@ import {
   calcAll, STEM_EL, BRANCH_EL, EL_KR, EL_HJ, EL_COL, EL_ORD, pick,
 } from "./data/saju.js";
 import {
-  CHARS, YONGSIN, GUIIN, SSINSAL, DAEUN_TXT, YEAR_GRADES,
+  CHARS, YONGSIN, GUIIN, SSINSAL, DAEUN_TXT, YEAR_GRADES, TIMES,
 } from "./data/data.js";
 import { resolveBirthDate } from "./data/calendar.js";
 
@@ -65,15 +65,8 @@ function isValidBirth(y, m, d, isLunar = false) {
   return resolveBirthDate(y, m, d, isLunar) !== null;
 }
 
-/* "HH:MM" → 시각(시간 단위, 분 포함). 빈 값이면 null. */
-function parseHour(value) {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value || "");
-  if (!match) return null;
-  const h = Number(match[1]);
-  const min = Number(match[2]);
-  if (h > 23 || min > 59) return null;
-  return h + min / 60;
-}
+/* 시진 선택 그리드용 — '모름' 제외한 12지신 시간대 */
+const TIME_CELLS = TIMES.filter((t) => t.v >= 0);
 
 /* ===== 일주 미리보기(간이) — 결과 헤더 라벨용 ===== */
 function iljuLabel(si, bi) {
@@ -226,10 +219,12 @@ export default function GaruSajuNight() {
     const solar = resolveBirthDate(y, m, d, isLunar);
     if (!solar) return setError("생년월일을 다시 확인해 주세요. (음력은 평달 기준)");
 
-    const hour = form.timeUnknown ? -1 : (parseHour(form.bt) ?? -1);
+    const hour = form.timeUnknown || form.bt === "" ? -1 : Number(form.bt);
+    const timeCell = TIMES.find((t) => String(t.v) === form.bt);
+    const timeLabel = hour < 0 || !timeCell ? null : `${timeCell.n} (${timeCell.r})`;
     const gender = form.gender || "f";
     const name = form.name.trim() || "운명의 갸루";
-    const original = { year: y, month: m, day: d, isLunar, birthTime: form.timeUnknown ? null : form.bt };
+    const original = { year: y, month: m, day: d, isLunar, birthTime: timeLabel };
 
     const result = buildReading(solar, hour, name, gender, original);
     setReading(result);
@@ -243,7 +238,7 @@ export default function GaruSajuNight() {
         birthInput: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
         calendarType: form.calendarType,
         birthSolar: `${solar.year}-${String(solar.month).padStart(2, "0")}-${String(solar.day).padStart(2, "0")}`,
-        birthTime: form.timeUnknown ? "모름" : form.bt,
+        birthTime: timeLabel || "모름",
         gender,
         ilju: result.iljuLabel,
         dominantElement: result.domKr,
@@ -267,7 +262,7 @@ export default function GaruSajuNight() {
         <FormScreen form={form} onChange={onChange} submit={submitTest} sending={sending} error={error} />
       ) : (
         <>
-          <ResultScreen name={form.name} email={form.email} reading={reading} openSheet={() => setSheetOpen(true)} />
+          <ResultScreen name={form.name} reading={reading} openSheet={() => setSheetOpen(true)} />
           <StickyBar applied={applied} openSheet={() => setSheetOpen(true)} />
           {sheetOpen && (
             <ApplySheet
@@ -321,11 +316,11 @@ function HeroVideo() {
   );
 }
 
-/* ===== 1단계: 대화형 입력 폼 (이름→생일→시간→성별→이메일) ===== */
-const STEP_COUNT = 5;
+/* ===== 1단계: 대화형 입력 폼 (인트로 → ①이름·생일 → ②시간·성별 → ③이메일) ===== */
+const INPUT_STEPS = 3; // 인트로 제외 입력 단계 수
 
 function FormScreen({ form, onChange, submit, sending, error }) {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(0); // 0=인트로, 1=이름·생일, 2=시간·성별, 3=이메일
   const [stepError, setStepError] = useState("");
 
   const setDigits = (key, max) => (e) =>
@@ -333,33 +328,31 @@ function FormScreen({ form, onChange, submit, sending, error }) {
   const setValue = (key, value) => onChange(key)({ target: { value, type: "text" } });
   const setBool = (key, value) => onChange(key)({ target: { checked: value, type: "checkbox" } });
 
-  const timeOk = form.timeUnknown || parseHour(form.bt) !== null;
+  const timeOk = form.timeUnknown || form.bt !== "";
 
   const next = () => {
     setStepError("");
     if (step === 0) {
-      if (!form.name.trim()) return setStepError("이름을 알려줘야 시작할 수 있어요!");
       setStep(1);
     } else if (step === 1) {
+      if (!form.name.trim()) return setStepError("이름을 알려줘야 시작할 수 있어요!");
       if (!isValidBirth(Number(form.by), Number(form.bm), Number(form.bd), form.calendarType === "lunar"))
         return setStepError("생년월일을 다시 확인해 주세요. (음력은 평달 기준)");
       setStep(2);
     } else if (step === 2) {
       if (!timeOk) return setStepError("시간을 입력하거나 ‘시간 몰라요’를 눌러줘.");
-      setStep(3);
-    } else if (step === 3) {
       if (!form.gender) return setStepError("대운 방향을 위해 성별을 골라줘!");
-      setStep(4);
+      setStep(3);
     }
   };
 
   const onEnter = (e) => {
-    if (e.key === "Enter") (step === 4 ? submit() : next());
+    if (e.key === "Enter") (step === 3 ? submit() : next());
   };
 
   return (
     <main className="gs-page gs-form-page">
-      <header className="gs-hero">
+      <header className={`gs-hero ${step > 0 ? "gs-hero-dim" : ""}`}>
         <HeroVideo />
         <div className="gs-hero-copy">
           <p className="gs-eyebrow">오늘 밤, 바로 펼쳐보는 사주 명식 풀이</p>
@@ -370,27 +363,23 @@ function FormScreen({ form, onChange, submit, sending, error }) {
         <section className="gs-chat" aria-label="사주 풀이 신청 대화">
         <p className="gs-bubble yui">
           <b className="gs-bubble-who">유이짱</b>
-          {step === 0 && "어서 와~☆ 촛불 켜놓고 기다렸어. 먼저, 이름이 뭐야?"}
-          {step === 1 && `${form.name}! 좋은 이름이다♡ 이제 생일을 알려줘.`}
-          {step === 2 && "태어난 시간도 알면 시주까지 봐줄 수 있어~ 모르면 패스해도 돼!"}
-          {step === 3 && "대운 흐름 보려면 이게 필요해. 어느 쪽으로 볼까?"}
-          {step === 4 && "오케이, 접수~☆ 풀이는 바로 보여주고, 메일로도 한 번 더 보내줄게!"}
+          {step === 0 && "어서 와~☆ 촛불 켜놓고 기다렸어. 오늘 밤, 네 팔자 전부 봐줄게♡"}
+          {step === 1 && "좋아, 접수~☆ 이름이랑 생일부터 알려줘!"}
+          {step === 2 && `${form.name}! 좋은 이름이다♡ 태어난 시간이랑, 어느 쪽인지도 알려줘~ 시간은 몰라도 괜찮아!`}
+          {step === 3 && "오케이, 접수~☆ 풀이는 바로 보여주고, 메일로도 한 번 더 보내줄게!"}
         </p>
 
         <div className="gs-step-panel" onKeyDown={onEnter}>
           {step === 0 && (
-            <>
-              <input className="gs-input" value={form.name} onChange={onChange("name")} placeholder="이름 입력" maxLength={20} autoFocus aria-label="이름" />
-              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
-              <button className="gs-cta" onClick={next}>다음 →</button>
-            </>
+            <button className="gs-cta" onClick={next}>유이짱에게 사주 보러가기 ☆</button>
           )}
 
           {step === 1 && (
             <>
+              <input className="gs-input" value={form.name} onChange={onChange("name")} placeholder="이름 입력" maxLength={20} autoFocus aria-label="이름" />
               <div className="gs-date-row" aria-label="생년월일 직접 입력">
                 <label className="gs-date-cell">
-                  <input className="gs-input" inputMode="numeric" value={form.by} onChange={setDigits("by", 4)} placeholder="1999" autoFocus aria-label="년" />
+                  <input className="gs-input" inputMode="numeric" value={form.by} onChange={setDigits("by", 4)} placeholder="1999" aria-label="년" />
                   <span>년</span>
                 </label>
                 <label className="gs-date-cell">
@@ -427,17 +416,20 @@ function FormScreen({ form, onChange, submit, sending, error }) {
 
           {step === 2 && (
             <>
-              <label className="gs-time-field">
-                <span>태어난 시간</span>
-                <input
-                  className="gs-input"
-                  type="time"
-                  value={form.bt}
-                  disabled={form.timeUnknown}
-                  onChange={(e) => { setValue("bt", e.target.value); if (form.timeUnknown) setBool("timeUnknown", false); }}
-                  aria-label="태어난 시간"
-                />
-              </label>
+              <div className="gs-time-grid" role="group" aria-label="태어난 시진 선택">
+                {TIME_CELLS.map((t) => (
+                  <button
+                    key={t.v}
+                    type="button"
+                    className={`gs-time-cell ${!form.timeUnknown && form.bt === String(t.v) ? "on" : ""}`}
+                    aria-pressed={!form.timeUnknown && form.bt === String(t.v)}
+                    onClick={() => { setValue("bt", String(t.v)); if (form.timeUnknown) setBool("timeUnknown", false); }}
+                  >
+                    <b>{t.n}</b>
+                    <small>{t.r}</small>
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 className={`gs-toggle-btn gs-unknown-btn ${form.timeUnknown ? "on" : ""}`}
@@ -446,16 +438,6 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               >
                 {form.timeUnknown ? "✓ 시간 몰라도 괜찮아~" : "시간 몰라요 (시주 빼고 볼게)"}
               </button>
-              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
-              <div className="gs-step-nav">
-                <button className="gs-back" onClick={() => setStep(1)}>← 이전</button>
-                <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
-              </div>
-            </>
-          )}
-
-          {step === 3 && (
-            <>
               <div className="gs-toggle">
                 {[["f", "여자"], ["m", "남자"]].map(([v, t]) => (
                   <button
@@ -471,13 +453,13 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               </div>
               {stepError && <p className="gs-error" role="alert">{stepError}</p>}
               <div className="gs-step-nav">
-                <button className="gs-back" onClick={() => setStep(2)}>← 이전</button>
+                <button className="gs-back" onClick={() => setStep(1)}>← 이전</button>
                 <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
               </div>
             </>
           )}
 
-          {step === 4 && (
+          {step === 3 && (
             <>
               <input className="gs-input" type="email" value={form.email} onChange={onChange("email")} placeholder="yui@example.com" autoFocus aria-label="결과지 받을 이메일" />
               <label className="gs-agree">
@@ -486,7 +468,7 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               </label>
               {error && <p className="gs-error" role="alert">{error}</p>}
               <div className="gs-step-nav">
-                <button className="gs-back" onClick={() => setStep(3)}>← 이전</button>
+                <button className="gs-back" onClick={() => setStep(2)}>← 이전</button>
                 <button className="gs-cta gs-cta-grow" onClick={submit} disabled={sending}>
                   {sending ? "펼치는 중…" : "내 사주 풀이 보기 ♡"}
                 </button>
@@ -496,11 +478,13 @@ function FormScreen({ form, onChange, submit, sending, error }) {
           )}
         </div>
 
-        <div className="gs-progress" aria-label={`${STEP_COUNT}단계 중 ${step + 1}단계`}>
-          {Array.from({ length: STEP_COUNT }, (_, i) => (
-            <span key={i} className={`gs-dot ${i <= step ? "on" : ""}`} />
-          ))}
-        </div>
+        {step > 0 && (
+          <div className="gs-progress" aria-label={`${INPUT_STEPS}단계 중 ${step}단계`}>
+            {Array.from({ length: INPUT_STEPS }, (_, i) => (
+              <span key={i} className={`gs-dot ${i < step ? "on" : ""}`} />
+            ))}
+          </div>
+        )}
         </section>
       </header>
     </main>
@@ -568,8 +552,15 @@ const Bubble = ({ who = "yui", children }) => (
   </p>
 );
 
+/* 웹툰식 타원 말풍선 — 기본은 이미지 상단에 걸치고, pos로 이미지 위 임의 위치 배치 가능 */
+const Balloon = ({ tail = "l", pos = "", children }) => (
+  <div className={`gs-balloon gs-balloon-${tail} ${pos}`}>
+    <p>{children}</p>
+  </div>
+);
+
 /* ===== 2단계: 온페이지 풀 사주 풀이 (유이짱 웹툰 26컷) ===== */
-function ResultScreen({ name, email, reading, openSheet }) {
+function ResultScreen({ name, reading, openSheet }) {
   if (!reading) return null;
   const {
     pillarView, elBars, domKr, domHj, char, original, tenGods,
@@ -584,24 +575,18 @@ function ResultScreen({ name, email, reading, openSheet }) {
         <CutPhoto src={ASSET.page01} alt="사주책 뒤에 숨어 눈만 빼꼼 내민 유이짱">
           <div className="gs-wt-overlay">
             <p className="gs-wt-eyebrow">✨ 유이짱의 초특급 사주 분석 ✨</p>
-            <p className="gs-wt-quote">“너... 생각보다 훨씬<br />흥미로운 팔자네~?(¬‿¬)♡”</p>
-            <span className="gs-wt-scroll" aria-hidden="true">OPEN YOUR FATE ↓</span>
+            <p className="gs-wt-quote">너... 생각보다 훨씬<br />흥미로운 팔자네~?<i className="gs-emo">(¬‿¬)♡</i></p>
           </div>
         </CutPhoto>
       </Cut>
 
-      <p className="gs-wt-mailnote">전체 풀이는 <b>{email}</b>로도 보내드렸어요 ✉</p>
-
       {/* 2컷 — 인사 */}
       <Cut num={2} className="gs-wt-photo-cut">
         <CutPhoto src={ASSET.page02} alt="손을 흔들며 인사하는 유이짱">
+          <Balloon tail="r" pos="gs-balloon-tl">{birthLineText(original)}<br /><b>{nick}~!</b></Balloon>
+          <Balloon tail="up" pos="gs-balloon-br">너 사주...<br /><b>너~무 흥미롭다♡</b></Balloon>
           <div className="gs-wt-overlay">
             <h2 className="gs-wt-title">안녕~!<br />난 <em>유이짱</em>이야♡</h2>
-            <Bubble>너 사주...<br /><b>너~무 흥미롭다♡</b></Bubble>
-            <div className="gs-wt-birth">
-              <span>{birthLineText(original)}</span>
-              <strong>{nick}~!</strong>
-            </div>
           </div>
         </CutPhoto>
       </Cut>
@@ -609,10 +594,9 @@ function ResultScreen({ name, email, reading, openSheet }) {
       {/* 3컷 — 기운 세당 */}
       <Cut num={3} className="gs-wt-photo-cut">
         <CutPhoto src={ASSET.page03} alt="책 위로 눈만 빼꼼 보이는 유이짱">
+          <Balloon tail="r" pos="gs-balloon-tl">옴마나~!<br /><b>너 기운이 꽤 세당?♡</b></Balloon>
           <div className="gs-wt-overlay">
-            <p className="gs-wt-script">옴마나~!</p>
-            <h2 className="gs-wt-title">너 기운이<br /><em>꽤 세당?♡</em></h2>
-            <p className="gs-wt-line">너 진짜 보통 팔자가 아닌데~?<br />딱 봐도 알지☆ 유이짱은 못 속여~(¬‿¬)♡</p>
+            <p className="gs-wt-line">너 진짜 보통 팔자가 아닌데~?<br />딱 봐도 알지☆<br />유이짱은 못 속여~<i className="gs-emo">(¬‿¬)♡</i></p>
           </div>
         </CutPhoto>
       </Cut>
@@ -620,28 +604,27 @@ function ResultScreen({ name, email, reading, openSheet }) {
       {/* 4컷 — 고민 짚기 */}
       <Cut num={4} className="gs-wt-photo-cut">
         <CutPhoto src={ASSET.page04} alt="놀란 표정으로 사주책을 펼친 유이짱">
-          <div className="gs-wt-overlay">
-            <Bubble>이게 고민되는 거지~?<br /><b>너 어떤 사람인지도☆<br />너 고민이 뭔지도☆</b><br />딱 봐도 알징~♡</Bubble>
-          </div>
+          <Balloon tail="l" pos="gs-balloon-tr">이게 고민되는 거지~?</Balloon>
+          <Balloon tail="upr" pos="gs-balloon-bl"><b>너 어떤 사람인지도☆<br />너 고민이 뭔지도☆</b><br />딱 봐도 알징~♡</Balloon>
         </CutPhoto>
       </Cut>
 
       {/* 5컷 — 37번 확인 */}
-      <Cut num={5} className="gs-wt-text-cut">
-        <h2 className="gs-wt-title">결정 다 해놓고<br /><em>마지막 확인만 37번</em><br />하는 거 맞지~?(¬‿¬)♡</h2>
+      <Cut num={5} className="gs-wt-text-cut gs-wt-lace">
+        <h2 className="gs-wt-title">결정 다 해놓고<br /><em>마지막 확인만 37번</em><br />하는 거 맞지~?<i className="gs-emo">(¬‿¬)♡</i></h2>
         <div className="gs-wt-checks">
           <p>좋아하는 것도 오래 고민하고☆</p>
           <p>사는 것도 오래 고민하고☆</p>
           <p>떠나는 것도 오래 고민해☆</p>
         </div>
-        <p className="gs-wt-punch">근데 웃긴 건~ 그렇게 고민하다 타이밍 놓치고<br /><b>“에이~ 원래 내 거 아니었나 보네♡”</b><br />하고 넘겨버리잖아~(&gt;_&lt;)💦</p>
+        <p className="gs-wt-punch">근데 웃긴 건~ 그렇게 고민하다 타이밍 놓치고<br /><b>“에이~ 원래 내 거 아니었나 보네♡”</b><br />하고 넘겨버리잖아~<i className="gs-emo">(&gt;_&lt;)💦</i></p>
       </Cut>
 
       {/* 6컷 — 팔자 때문 */}
       <Cut num={6} className="gs-wt-text-cut gs-wt-impact">
         <p className="gs-wt-kicker">THE REASON</p>
         <h2 className="gs-wt-title">{nick}이 지금<br />이게 고민되는 이유☆</h2>
-        <p className="gs-wt-answer">유이짱은 알지~♡<br /><b>바로 니 팔자 때문이야</b> (¬‿¬)✨</p>
+        <p className="gs-wt-answer">유이짱은 알지~♡<br /><b>바로 니 팔자 때문이야</b> <i className="gs-emo">(¬‿¬)✨</i></p>
       </Cut>
 
       {/* 7컷 — 사주 명식 (실데이터) */}
@@ -687,47 +670,44 @@ function ResultScreen({ name, email, reading, openSheet }) {
 
       {/* 8컷 — 흐름 궁금하지 */}
       <Cut num={8} className="gs-wt-photo-cut">
-        <CutPhoto src={ASSET.page08} alt="귀엽게 올려다보는 유이짱">
-          <div className="gs-wt-overlay">
-            <Bubble>니 팔자가 <b>어떻게 흘러가는지</b><br />궁금하지~?♡</Bubble>
-          </div>
-        </CutPhoto>
+        <Balloon tail="r">니 팔자가 <b>어떻게 흘러가는지</b><br />궁금하지~?♡</Balloon>
+        <CutPhoto src={ASSET.page08} alt="귀엽게 올려다보는 유이짱" />
       </Cut>
 
       {/* 9컷 — 적나라하게 */}
       <Cut num={9} className="gs-wt-text-cut">
-        <h2 className="gs-wt-title">니 눈앞에<br /><em>완전 적나라하게</em><br />보여줄 수 있엉~(¬‿¬)♡</h2>
+        <h2 className="gs-wt-title">니 눈앞에<br /><em>완전 적나라하게</em><br />보여줄 수 있엉~<i className="gs-emo">(¬‿¬)♡</i></h2>
         <p className="gs-wt-sparkle" aria-hidden="true">✦ ♡ ✦</p>
       </Cut>
 
       {/* 10컷 — 그런데 말이야 */}
       <Cut num={10} className="gs-wt-photo-cut">
-        <CutPhoto src={ASSET.page10} alt="살짝 고민하는 표정의 유이짱">
-          <div className="gs-wt-overlay">
-            <Bubble>그런데 말이야~♡</Bubble>
-          </div>
-        </CutPhoto>
+        <Balloon tail="l">그런데 말이야~♡</Balloon>
+        <CutPhoto src={ASSET.page10} alt="살짝 고민하는 표정의 유이짱" />
       </Cut>
 
       {/* 11컷 — 삐빅 */}
-      <Cut num={11} className="gs-wt-text-cut gs-wt-warning">
-        <span className="gs-wt-beep">삐빅☆</span>
-        <h2 className="gs-wt-title">좋은 말만은<br /><em>안 한다~?</em> (¬‿¬)♡</h2>
-        <div className="gs-wt-tape" aria-hidden="true">REAL TALK · REAL TALK · REAL TALK</div>
+      <Cut num={11} className="gs-wt-text-cut gs-wt-warning gs-wt-realtalk">
+        <div className="gs-wt-tape-bg" aria-hidden="true">
+          <div className="gs-wt-tape gs-wt-tape-ghost-big">REAL TALK · REAL TALK</div>
+          <div className="gs-wt-tape gs-wt-tape-ghost-sm">REAL TALK · REAL TALK · REAL TALK · REAL TALK</div>
+        </div>
+        <span className="gs-wt-beep"><i className="gs-wt-beep-warn">⚠︎</i> 삐빅☆ <i className="gs-wt-beep-warn">⚠︎</i></span>
+        <h2 className="gs-wt-title">좋은 말만은<br /><em>안 한다~?</em> <i className="gs-emo">(¬‿¬)♡</i></h2>
       </Cut>
 
       {/* 13컷 — 반복될 문제 */}
       <Cut num={13} className="gs-wt-text-cut gs-wt-impact">
-        <h2 className="gs-wt-title">⚠ 니 인생에서<br /><em>반복될 수 있는 문제</em> ⚠</h2>
+        <h2 className="gs-wt-title gs-wt-problem-title"><i className="gs-warn">⚠︎</i> 니 인생에서 <em>반복될 수 있는 문제</em> <i className="gs-warn">⚠︎</i></h2>
         <div className="gs-wt-problem">
           <strong>“알아서 알아주겠지~”</strong>
-          <p>이 생각 때문에 손해 본 적 있지~?(¬‿¬)♡</p>
+          <p>이 생각 때문에 손해 본 적 있지~?<i className="gs-emo">(¬‿¬)♡</i></p>
           <ul>
             <li>고맙다는 말도 못 하고☆</li>
             <li>섭섭하다는 말도 못 하고☆</li>
             <li>좋아한다는 말도 못 하고☆</li>
           </ul>
-          <p>참을 만큼 참다가 어느 날 갑자기<br /><b>“나 이제 못 하겠어”</b><br />하고 사라지는 패턴(&gt;_&lt;)💦</p>
+          <p>참을 만큼 참다가 어느 날 갑자기<br /><b>“나 이제 못 하겠어”</b><br />하고 사라지는 패턴<i className="gs-emo">(&gt;_&lt;)💦</i></p>
         </div>
         <p className="gs-wt-chill">근데 더 소름 돋는 건~<br /><b>이게 한 번이 아니라는 거야♡</b></p>
       </Cut>
@@ -738,26 +718,26 @@ function ResultScreen({ name, email, reading, openSheet }) {
         <Bubble>궁금하지~?♡</Bubble>
         <span className="gs-wt-divider" aria-hidden="true">✦</span>
         <h2 className="gs-wt-title">니 문제는<br /><em>능력 부족이 아니야~☆</em></h2>
-        <p className="gs-wt-line">생각보다 너무 오래 참는 거야(¬‿¬)♡</p>
+        <p className="gs-wt-line">생각보다 너무 오래 참는 거야<i className="gs-emo">(¬‿¬)♡</i></p>
         <div className="gs-wt-actions">
           <span>확인만 하지 말고<br /><b>표현도 하고☆</b></span>
           <span>기다리지만 말고<br /><b>움직여봐☆</b></span>
         </div>
-        <p className="gs-wt-line">니 팔자는 생각만 할 때보다<br /><b>움직이는 순간 훨씬 크게 열리거든</b> (°▽°)✨</p>
-        <p className="gs-wt-throw">“알아서 알겠지” <b>그거 버려~♡</b><br /><small>말해야 알더라구~?(&gt;_&lt;)💦</small></p>
+        <p className="gs-wt-line">니 팔자는 생각만 할 때보다<br /><b>움직이는 순간 훨씬 크게 열리거든</b> <i className="gs-emo">(°▽°)✨</i></p>
+        <p className="gs-wt-throw">“알아서 알겠지” <b>그거 버려~♡</b><br /><small>말해야 알더라구~?<i className="gs-emo">(&gt;_&lt;)💦</i></small></p>
       </Cut>
 
       {/* 16컷 — 후훗 */}
       <Cut num={16} className="gs-wt-text-cut gs-wt-impact">
         <p className="gs-wt-script">후훗♡</p>
-        <p className="gs-wt-answer">이거 말고도 할 얘기가<br /><b>엄청 많다구~(¬‿¬)✨</b></p>
+        <p className="gs-wt-answer">이거 말고도 할 얘기가<br /><b>엄청 많다구~<i className="gs-emo">(¬‿¬)✨</i></b></p>
       </Cut>
 
       {/* 17컷 — 복채 */}
       <Cut num={17} className="gs-wt-photo-cut">
+        <Balloon tail="c">그래서~<br /><b>복채는 준비했어~?♡</b></Balloon>
         <CutPhoto src={ASSET.page17} alt="의자에 앉아 내려다보는 유이짱">
           <div className="gs-wt-overlay">
-            <Bubble>그래서~<br /><b>복채는 준비했어~?♡</b></Bubble>
             <p className="gs-wt-only">오직 <b>{nick}</b>만을 위한 이야기✨</p>
           </div>
         </CutPhoto>
@@ -768,13 +748,13 @@ function ResultScreen({ name, email, reading, openSheet }) {
         <span className="gs-wt-hand" aria-hidden="true">✋</span>
         <Bubble>잠깐♡<br /><b>무슨 생각해~?☆</b></Bubble>
         <h2 className="gs-wt-title">설마~<br />다른 운세 알려주는 곳이랑<br /><em>똑같다고 생각한 건 아니지~?</em></h2>
-        <p className="gs-wt-stupid">스투핏~!!<small>(&gt;_&lt;)💦</small></p>
+        <p className="gs-wt-stupid">스투핏~!!<small><i className="gs-emo">(&gt;_&lt;)💦</i></small></p>
         <span className="gs-wt-divider" aria-hidden="true">✦</span>
         <h2 className="gs-wt-title">유이짱 사주는♡</h2>
         <div className="gs-wt-lifeline" aria-hidden="true">
           <span>태어난 순간</span><i /><span>눈을 감는 순간</span>
         </div>
-        <p className="gs-wt-answer">네 인생의 흐름을<br /><b>전부 알려준다구~(¬‿¬)✨</b></p>
+        <p className="gs-wt-answer">네 인생의 흐름을<br /><b>전부 알려준다구~<i className="gs-emo">(¬‿¬)✨</i></b></p>
         <span className="gs-wt-divider" aria-hidden="true">✦</span>
         <h2 className="gs-wt-title">너가 보게 될<br /><em>마지막 사주☆</em></h2>
         <p className="gs-wt-destiny">운명을 바꿀 기회✨</p>
@@ -848,11 +828,8 @@ function ResultScreen({ name, email, reading, openSheet }) {
 
       {/* 26컷 — CTA */}
       <Cut num={26} className="gs-wt-photo-cut gs-wt-cta">
-        <CutPhoto src={ASSET.page02b} alt="활짝 웃으며 손을 흔드는 유이짱">
-          <div className="gs-wt-overlay">
-            <Bubble>여기까지 봤으면 <b>느낌 왔잖아~?(¬‿¬)♡</b><br /><small>근데 이건 겉만 본 거야☆</small></Bubble>
-          </div>
-        </CutPhoto>
+        <Balloon tail="c">여기까지 봤으면<br /><b>느낌 왔잖아~?<i className="gs-emo">(¬‿¬)♡</i></b><br /><small>근데 이건 겉만 본 거야☆</small></Balloon>
+        <CutPhoto src={ASSET.page02b} alt="활짝 웃으며 손을 흔드는 유이짱" />
         <div className="gs-wt-cta-body">
           <h2 className="gs-wt-title">너 사주 속까지<br /><em>싹 다 뜯어봐주는 곳</em>이 있어♡</h2>
           <div className="gs-chips gs-wt-center">
@@ -861,16 +838,16 @@ function ResultScreen({ name, email, reading, openSheet }) {
             <span className="gs-chip">인간관계♡</span>
             <span className="gs-chip">돈♡</span>
           </div>
-          <p className="gs-wt-line">전부 1:1로 분석해줘(°▽°)✨</p>
+          <p className="gs-wt-line">전부 1:1로 분석해줘<i className="gs-emo">(°▽°)✨</i></p>
           <div className="gs-wt-reviews">
-            <strong>해본 사람들? 다 소름 돋았다더라~ Σ(°△°)💦</strong>
+            <strong>해본 사람들? 다 소름 돋았다더라~ <i className="gs-emo">Σ(°△°)💦</i></strong>
             <span>“내 얘기 그대로야”</span>
             <span>“왜 진작 안 했지?”</span>
           </div>
-          <p className="gs-wt-limit">근데 아무나 못 해☆<br /><b>딱 15명만 가능하거든~(&gt;_&lt;)✋</b></p>
+          <p className="gs-wt-limit">근데 아무나 못 해☆<br /><b>딱 15명만 가능하거든~<i className="gs-emo">(&gt;_&lt;)✋</i></b></p>
           <Bubble>읽으면서 찔렸잖아~?<br /><b>그게 지금 너한테 가장 필요한 거야♡</b></Bubble>
           <button className="gs-cta" onClick={openSheet}>👉 지금 바로 신청하기</button>
-          <p className="gs-wt-nudge">안 하면~? 또 같은 하루 반복이야☆<br /><b>나라면 안 참는데~?(¬‿¬)✨</b></p>
+          <p className="gs-wt-nudge">안 하면~? 또 같은 하루 반복이야☆<br /><b>나라면 안 참는데~?<i className="gs-emo">(¬‿¬)✨</i></b></p>
         </div>
       </Cut>
     </main>
@@ -996,7 +973,16 @@ function ApplySheet({ name, email, ilju, applied, onApplied, close }) {
 function StyleTag() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gaegu:wght@700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Gaegu:wght@700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+      @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+
+      @font-face {
+        font-family: 'yg-jalnan';
+        src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_four@1.2/JalnanOTF00.woff') format('woff');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+      }
 
       :root {
         --bg: #150A12;            /* 딥 플럼 블랙 (영상 밤하늘) */
@@ -1021,7 +1007,7 @@ function StyleTag() {
           radial-gradient(circle at 50% 0%, rgba(224,0,122,.16), transparent 55%),
           var(--bg);
         color: var(--text);
-        font-family: 'Noto Sans KR', sans-serif;
+        font-family: 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         display: flex; flex-direction: column; align-items: center;
       }
       html.gs-form-locked,
@@ -1099,8 +1085,8 @@ function StyleTag() {
         backdrop-filter: blur(8px);
       }
       .gs-title {
-        font-family: 'Black Han Sans', sans-serif;
-        font-size: clamp(50px, 15vw, 68px); line-height: 1;
+        font-family: 'yg-jalnan', 'Pretendard Variable', sans-serif;
+        font-size: clamp(46px, 13.5vw, 62px); line-height: 1.05;
         margin: 6px 0 10px; color: #FFF7EE;
         text-shadow: 0 3px 4px rgba(0,0,0,.7), 0 0 22px rgba(255,77,157,.72), 0 0 50px rgba(255,77,157,.4);
       }
@@ -1126,7 +1112,12 @@ function StyleTag() {
         object-fit: cover;
         object-position: center center;
         display: block;
+        transition: filter .45s ease, transform .45s ease;
       }
+      /* 입력 단계: 상단 카피 숨기고 배경을 흐리게 */
+      .gs-hero-dim .gs-hero-video { filter: blur(7px) brightness(.55); transform: scale(1.06); }
+      .gs-hero-copy { transition: opacity .35s ease; }
+      .gs-hero-dim .gs-hero-copy { opacity: 0; pointer-events: none; }
       .gs-hero-glow {
         position: absolute; inset: 0; pointer-events: none;
         box-shadow: inset 0 0 80px rgba(240,180,80,.12);
@@ -1151,7 +1142,7 @@ function StyleTag() {
       }
       .gs-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text); }
       .gs-input {
-        font: 500 16px 'Noto Sans KR', sans-serif;
+        font: 500 16px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
         background: #170B14; color: var(--text); caret-color: var(--pink);
       }
@@ -1159,7 +1150,7 @@ function StyleTag() {
       .gs-input:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
       .gs-toggle { display: flex; gap: 8px; }
       .gs-toggle-btn {
-        flex: 1; padding: 11px 0; font: 700 15px 'Noto Sans KR', sans-serif;
+        flex: 1; padding: 11px 0; font: 700 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         border: 1px solid var(--line); border-radius: 12px; background: #170B14; color: var(--muted); cursor: pointer;
       }
       .gs-toggle-btn.on {
@@ -1167,15 +1158,27 @@ function StyleTag() {
         box-shadow: 0 0 14px rgba(255,77,157,.5);
       }
       .gs-toggle-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-      .gs-time-field { display: flex; flex-direction: column; gap: 6px; font: 700 13px 'Noto Sans KR', sans-serif; color: var(--muted); }
-      .gs-time-field .gs-input { width: 100%; color-scheme: dark; }
+      .gs-time-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      .gs-time-cell {
+        display: flex; flex-direction: column; align-items: center; gap: 1px;
+        padding: 8px 2px; border: 1px solid var(--line); border-radius: 11px;
+        background: #170B14; color: var(--muted); cursor: pointer;
+      }
+      .gs-time-cell b { font: 700 13.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--text); }
+      .gs-time-cell small { font-size: 10px; }
+      .gs-time-cell.on {
+        background: linear-gradient(120deg, var(--pink), var(--deep));
+        border-color: var(--pink); box-shadow: 0 0 12px rgba(255,77,157,.5);
+      }
+      .gs-time-cell.on b, .gs-time-cell.on small { color: #fff; }
+      .gs-time-cell:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
       .gs-unknown-btn { width: 100%; flex: none; }
       .gs-hint { font-size: 12px; color: var(--gold); margin-top: 6px; }
       .gs-agree { display: flex; gap: 8px; font-size: 12px; line-height: 1.5; align-items: flex-start; color: var(--muted); }
       .gs-agree input { margin-top: 2px; accent-color: var(--deep); }
       .gs-error { font-size: 13px; font-weight: 700; color: #FF9DBE; background: rgba(224,0,122,.16); border: 1px solid rgba(255,77,157,.4); border-radius: 10px; padding: 8px 12px; }
       .gs-cta {
-        font: 700 17px 'Noto Sans KR', sans-serif;
+        font: 700 17px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         padding: 15px 0; border: 0; border-radius: 999px;
         background: linear-gradient(120deg, var(--pink), var(--deep));
         color: #fff; cursor: pointer;
@@ -1215,7 +1218,7 @@ function StyleTag() {
         background: linear-gradient(120deg, var(--pink), var(--deep)); color: #fff; border: 0;
         box-shadow: 0 0 14px rgba(255,77,157,.4);
       }
-      .gs-bubble-who { display: block; font: 700 11px 'Noto Sans KR', sans-serif; color: var(--gold); margin-bottom: 2px; }
+      .gs-bubble-who { display: block; font: 700 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); margin-bottom: 2px; }
       .gs-step-panel {
         background: rgba(36,18,38,.9); border: 1px solid var(--line); border-radius: 18px;
         box-shadow: 0 0 20px rgba(224,0,122,.14); padding: 13px 12px;
@@ -1227,7 +1230,7 @@ function StyleTag() {
       .gs-date-cell .gs-input { width: 100%; min-width: 0; text-align: center; }
       .gs-step-nav { display: flex; gap: 8px; }
       .gs-back {
-        font: 700 14px 'Noto Sans KR', sans-serif; padding: 0 16px;
+        font: 700 14px 'Pretendard Variable', 'Noto Sans KR', sans-serif; padding: 0 16px;
         border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer;
       }
       .gs-back:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
@@ -1237,19 +1240,82 @@ function StyleTag() {
       .gs-dot.on { background: var(--pink); box-shadow: 0 0 8px rgba(255,77,157,.7); }
 
       /* ===== 온페이지 풀이 (웹툰 26컷 — 경계선 없는 연속 스크롤) ===== */
-      .gs-result { display: flex; flex-direction: column; gap: 0; padding: 0 0 110px; }
-      .gs-result .gs-bubble { font-size: 19px; padding: 12px 17px; max-width: 88%; }
+      .gs-result { --muted: #D9B6C9; display: flex; flex-direction: column; gap: 0; padding: 0 0 110px; }
+
+      /* 웹툰식 고대비 말풍선: 흰 바탕 + 검정 테두리 + 진한 글자 */
+      .gs-result .gs-bubble,
+      .gs-result .gs-bubble.yui,
+      .gs-result .gs-bubble.friend {
+        font-size: 19px; padding: 13px 18px; max-width: 88%;
+        background: #FFFDF7; border: 2px solid #221019; color: #221019;
+        box-shadow: 5px 6px 0 rgba(224,0,122,.3);
+      }
+      .gs-result .gs-bubble b { color: var(--deep); }
+      .gs-result .gs-bubble-who { color: var(--deep); }
+      .gs-result .gs-bubble small { color: #6E4A5D; }
+
+      /* 웹툰식 타원 말풍선 (이미지 상단에 걸침) */
+      .gs-balloon {
+        position: relative; z-index: 5;
+        width: fit-content; max-width: 84%;
+        margin: 30px auto -38px;
+        background: #FFFDF7; border: 2.5px solid #221019;
+        border-radius: 50%;
+        padding: 30px 40px 32px;
+        text-align: center;
+        filter: drop-shadow(0 8px 16px rgba(0,0,0,.4));
+      }
+      .gs-balloon p { margin: 0; font: 700 18.5px/1.6 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: #221019; }
+      .gs-balloon b { color: var(--deep); }
+      .gs-balloon small { display: block; font-size: 14.5px; font-weight: 500; color: #6E4A5D; }
+      .gs-balloon::before, .gs-balloon::after { content: ''; position: absolute; border-style: solid; border-color: transparent; }
+      .gs-balloon::before { border-width: 20px 11px 0; border-top-color: #221019; bottom: -17px; }
+      .gs-balloon::after  { border-width: 14px 7px 0; border-top-color: #FFFDF7; bottom: -8px; }
+      .gs-balloon-l::before { left: 30%; transform: rotate(12deg); }
+      .gs-balloon-l::after  { left: calc(30% + 4px); transform: rotate(12deg); }
+      .gs-balloon-c::before { left: 50%; margin-left: -11px; }
+      .gs-balloon-c::after  { left: 50%; margin-left: -7px; }
+      .gs-balloon-r::before { right: 30%; transform: rotate(-12deg); }
+      .gs-balloon-r::after  { right: calc(30% + 4px); transform: rotate(-12deg); }
+      /* 위로 향하는 꼬리 (아래쪽 말풍선용) */
+      .gs-balloon-up::before {
+        top: -17px; bottom: auto; left: 32%;
+        border-width: 0 11px 20px; border-bottom-color: #221019; border-top-color: transparent;
+        transform: rotate(10deg);
+      }
+      .gs-balloon-up::after {
+        top: -8px; bottom: auto; left: calc(32% + 4px);
+        border-width: 0 7px 14px; border-bottom-color: #FFFDF7; border-top-color: transparent;
+        transform: rotate(10deg);
+      }
+      /* 위로 향하는 꼬리 — 오른쪽 변형 */
+      .gs-balloon-upr::before {
+        top: -17px; bottom: auto; right: 28%;
+        border-width: 0 11px 20px; border-bottom-color: #221019; border-top-color: transparent;
+        transform: rotate(-10deg);
+      }
+      .gs-balloon-upr::after {
+        top: -8px; bottom: auto; right: calc(28% + 4px);
+        border-width: 0 7px 14px; border-bottom-color: #FFFDF7; border-top-color: transparent;
+        transform: rotate(-10deg);
+      }
+      /* 이미지 위 임의 배치 */
+      .gs-balloon-tl { position: absolute; z-index: 5; top: 18px; left: 14px; margin: 0; max-width: 70%; padding: 20px 26px; }
+      .gs-balloon-tl p { font-size: 15.5px; }
+      .gs-balloon-tr { position: absolute; z-index: 5; top: 18px; right: 14px; margin: 0; max-width: 72%; padding: 22px 28px; }
+      .gs-balloon-br { position: absolute; z-index: 5; right: 14px; bottom: 150px; margin: 0; max-width: 66%; padding: 24px 30px; }
+      .gs-balloon-bl { position: absolute; z-index: 5; left: 14px; bottom: 26px; margin: 0; max-width: 74%; padding: 24px 28px; }
 
       .gs-reveal { opacity: 0; transform: translateY(16px); transition: opacity .5s ease, transform .55s cubic-bezier(.2,.75,.2,1); }
       .gs-reveal.shown { opacity: 1; transform: none; }
 
       .gs-sec-head { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
-      .gs-sec-kicker { font: 700 12.5px 'Noto Sans KR', sans-serif; letter-spacing: .14em; color: var(--gold); }
-      .gs-sec-title { font-family: 'Black Han Sans', sans-serif; font-size: 25px; margin: 0; color: #FFF7EE; line-height: 1.28; }
+      .gs-sec-kicker { font: 700 12.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: .14em; color: var(--gold); }
+      .gs-sec-title { font: 400 21px/1.4 'yg-jalnan', 'Pretendard Variable', sans-serif; margin: 0; color: #FFF7EE; }
 
       .gs-body { font-size: 16px; line-height: 1.75; color: #FFEFE0; margin: 0; }
       .gs-body b { color: var(--gold); }
-      .gs-sub-label { font: 700 13.5px 'Noto Sans KR', sans-serif; color: var(--gold); margin: 6px 0 -2px; letter-spacing: .04em; }
+      .gs-sub-label { font: 700 13.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); margin: 6px 0 -2px; letter-spacing: .04em; }
       .gs-chips { display: flex; gap: 7px; flex-wrap: wrap; }
       .gs-chip { font-size: 14.5px; font-weight: 700; color: #FF7FB9; background: rgba(255,77,157,.16); border: 1px solid rgba(255,77,157,.45); border-radius: 999px; padding: 5px 13px; }
 
@@ -1261,46 +1327,58 @@ function StyleTag() {
       .gs-wt-img { width: 100%; display: block; }
       .gs-wt-shade {
         position: absolute; inset: 0; pointer-events: none;
-        background: linear-gradient(180deg, rgba(12,5,10,.2), transparent 28% 52%, rgba(12,5,10,.88) 94%);
+        background: linear-gradient(180deg, rgba(12,5,10,.2), transparent 26% 46%, rgba(12,5,10,.62) 72%, rgba(12,5,10,.96) 96%);
       }
       .gs-wt-overlay {
         position: absolute; right: 14px; bottom: 14px; left: 14px;
         display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
       }
-      .gs-wt-overlay .gs-bubble { backdrop-filter: blur(6px); }
-      .gs-wt-overlay .gs-bubble b { color: var(--gold); }
-      .gs-wt-overlay .gs-bubble small { display: block; font-size: 14px; opacity: .85; }
+      .gs-wt-overlay .gs-bubble b { color: var(--deep); }
+      .gs-wt-overlay .gs-bubble small { display: block; font-size: 14px; }
 
       /* 커버 (1컷) */
       .gs-wt-cover .gs-wt-overlay { align-items: center; text-align: center; gap: 12px; }
       .gs-wt-eyebrow {
         margin: 0; padding: 5px 14px; border-radius: 999px;
-        font: 700 12.5px 'Noto Sans KR', sans-serif; letter-spacing: .04em;
+        font: 700 12.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: .04em;
         color: #FFD98D; background: rgba(21,10,18,.6); border: 1px solid rgba(240,180,80,.55);
         backdrop-filter: blur(8px);
       }
       .gs-wt-quote {
         margin: 0; font-family: 'Gaegu', cursive; font-size: 24px; line-height: 1.4;
-        color: #FFF7EE; text-shadow: 0 2px 14px rgba(0,0,0,.85), 0 0 26px rgba(255,77,157,.5);
+        color: #FFFCF5; text-shadow: 0 2px 14px rgba(0,0,0,.9);
       }
-      .gs-wt-scroll { font: 900 11px 'Noto Sans KR', sans-serif; letter-spacing: 3px; color: var(--gold); text-shadow: 0 0 10px rgba(240,180,80,.6); }
-      .gs-wt-mailnote { margin: 0; padding: 14px 20px; text-align: center; font-size: 13.5px; color: var(--muted); background: #12060F; }
-      .gs-wt-mailnote b { color: var(--gold); }
 
-      /* 타이포 — 크고 또렷하게 */
+      /* 타이포 — 크고 또렷하게 (글로우 없는 솔리드, 이미지 위에서만 다크 섀도) */
+      .gs-emo { font: 500 0.62em 'Pretendard Variable', 'Noto Sans KR', sans-serif; font-style: normal; letter-spacing: -.02em; opacity: .92; }
       .gs-wt-title {
-        margin: 0; font-family: 'Black Han Sans', sans-serif;
-        font-size: clamp(27px, 8vw, 37px); line-height: 1.34; color: #FFF7EE;
-        text-shadow: 0 2px 12px rgba(0,0,0,.7), 0 0 24px rgba(255,77,157,.35);
+        margin: 0; font: 400 clamp(23px, 6.8vw, 31px)/1.48 'yg-jalnan', 'Pretendard Variable', sans-serif;
+        color: #FFFCF5;
         text-wrap: balance;
       }
-      .gs-wt-title em { font-style: normal; color: var(--pink); text-shadow: 0 0 20px rgba(255,77,157,.7); }
-      .gs-wt-script { margin: 0; font-family: 'Gaegu', cursive; font-size: 31px; color: var(--pink); text-shadow: 0 0 14px rgba(255,77,157,.55); }
-      .gs-wt-line { margin: 0; font-size: 16.5px; line-height: 1.75; color: #FFEFE0; }
+      .gs-wt-title em { font-style: normal; color: #FF6FB0; }
+      .gs-wt-overlay .gs-wt-title {
+        text-shadow:
+          -2px -2px 0 rgba(12,5,10,.9), 2px -2px 0 rgba(12,5,10,.9),
+          -2px 2px 0 rgba(12,5,10,.9), 2px 2px 0 rgba(12,5,10,.9),
+          0 4px 18px rgba(0,0,0,.9);
+      }
+      .gs-wt-script { margin: 0; font-family: 'Gaegu', cursive; font-size: 31px; color: #FF8FC2; }
+      .gs-wt-overlay .gs-wt-script {
+        text-shadow:
+          -1.5px -1.5px 0 rgba(12,5,10,.85), 1.5px -1.5px 0 rgba(12,5,10,.85),
+          -1.5px 1.5px 0 rgba(12,5,10,.85), 1.5px 1.5px 0 rgba(12,5,10,.85),
+          0 3px 12px rgba(0,0,0,.9);
+      }
+      .gs-wt-overlay .gs-wt-line {
+        font-size: 19px; font-weight: 700; line-height: 1.8;
+        text-shadow: 0 1px 8px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.9);
+      }
+      .gs-wt-line { margin: 0; font-size: 16.5px; font-weight: 700; line-height: 1.75; color: #FFF3E6; }
       .gs-wt-line b { color: var(--gold); }
-      .gs-wt-kicker { margin: 0; font: 700 12.5px 'Noto Sans KR', sans-serif; letter-spacing: .2em; color: var(--gold); }
-      .gs-wt-answer { margin: 0; font-family: 'Gaegu', cursive; font-size: 24px; line-height: 1.5; color: #FFC9E2; }
-      .gs-wt-answer b { color: #fff; text-shadow: 0 0 16px rgba(255,77,157,.8); }
+      .gs-wt-kicker { margin: 0; font: 700 12.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: .2em; color: var(--gold); }
+      .gs-wt-answer { margin: 0; font-family: 'Gaegu', cursive; font-size: 24px; line-height: 1.5; color: #FFD3E8; }
+      .gs-wt-answer b { color: #fff; }
 
       /* 텍스트 컷 — 경계선 없는 풀폭 밴드 (배경색으로만 구분) */
       .gs-wt-text-cut {
@@ -1314,6 +1392,28 @@ function StyleTag() {
           radial-gradient(circle at 50% 10%, rgba(255,77,157,.24), transparent 55%),
           linear-gradient(160deg, #31112A, #190818);
       }
+
+      /* 블랙 레이스 테두리 — 스캘럽(반원) 띠 + 도트 트림 */
+      .gs-wt-lace { position: relative; padding: 64px 40px; }
+      .gs-wt-lace::before {
+        content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+        --lc: #0A0309;
+        background:
+          linear-gradient(var(--lc), var(--lc)) top left / 100% 12px no-repeat,
+          linear-gradient(var(--lc), var(--lc)) bottom left / 100% 12px no-repeat,
+          linear-gradient(var(--lc), var(--lc)) top left / 12px 100% no-repeat,
+          linear-gradient(var(--lc), var(--lc)) top right / 12px 100% no-repeat,
+          radial-gradient(circle 10px at 50% 10px, var(--lc) 9px, transparent 10px) top left / 26px 24px repeat-x,
+          radial-gradient(circle 10px at 50% calc(100% - 10px), var(--lc) 9px, transparent 10px) bottom left / 26px 24px repeat-x,
+          radial-gradient(circle 10px at 10px 50%, var(--lc) 9px, transparent 10px) top left / 24px 26px repeat-y,
+          radial-gradient(circle 10px at calc(100% - 10px) 50%, var(--lc) 9px, transparent 10px) top right / 24px 26px repeat-y;
+      }
+      .gs-wt-lace::after {
+        content: ''; position: absolute; inset: 30px; z-index: 0; pointer-events: none;
+        border: 3px dotted rgba(10,3,9,.9); border-radius: 12px;
+        box-shadow: 0 0 0 1px rgba(255,77,157,.22);
+      }
+      .gs-wt-lace > * { position: relative; z-index: 1; }
       .gs-wt-warning {
         background:
           radial-gradient(circle at 50% 0%, rgba(240,180,80,.18), transparent 55%),
@@ -1322,42 +1422,66 @@ function StyleTag() {
       .gs-wt-finale { gap: 18px; padding-block: 54px; }
       .gs-wt-divider { width: 100%; text-align: center; color: var(--gold); font-size: 16px; opacity: .85; margin-block: 14px; text-shadow: 0 0 10px rgba(240,180,80,.6); }
 
-      .gs-wt-checks { display: flex; flex-direction: column; gap: 6px; }
-      .gs-wt-checks p { margin: 0; font-family: 'Gaegu', cursive; font-size: 21px; color: #FFEFE0; }
-      .gs-wt-punch { margin: 0; font-size: 16px; line-height: 1.75; color: #E8C8D8; }
-      .gs-wt-punch b { color: var(--pink); font-size: 17.5px; }
+      .gs-wt-checks { display: flex; flex-direction: column; gap: 7px; }
+      .gs-wt-checks p { margin: 0; font: 700 16.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: #FFF3E6; }
+      .gs-wt-punch { margin: 0; font-size: 16px; line-height: 1.75; color: #F1DBE7; }
+      .gs-wt-punch b { color: #FF6FB0; font-size: 17.5px; }
 
       .gs-wt-sparkle { margin: 0; color: var(--gold); font-size: 18px; letter-spacing: 10px; text-shadow: 0 0 12px rgba(240,180,80,.6); }
 
       .gs-wt-beep {
+        display: inline-flex; align-items: center; gap: 8px;
         font-family: 'Gaegu', cursive; font-size: 22px; color: var(--ink);
-        background: var(--gold); border-radius: 999px; padding: 3px 18px;
+        background: var(--gold); border-radius: 999px; padding: 3px 16px;
         box-shadow: 0 0 16px rgba(240,180,80,.5);
       }
+      .gs-wt-beep-warn { font-style: normal; font-size: 17px; line-height: 1; transform: translateY(-1px); }
+      /* REAL TALK 컷 — 흐릿한 테이프들이 대화 텍스트 뒤 배경으로 */
+      .gs-wt-realtalk { overflow: hidden; justify-content: center; padding-block: 64px; }
+      .gs-wt-realtalk .gs-wt-beep,
+      .gs-wt-realtalk .gs-wt-title { position: relative; z-index: 2; }
+      .gs-wt-tape-bg { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
       .gs-wt-tape {
-        width: calc(100% + 40px); padding: 6px 0; transform: rotate(-2deg);
-        font: 900 10px 'Noto Sans KR', sans-serif; letter-spacing: 3px; color: var(--ink);
+        position: absolute; left: -50px; right: -50px;
+        text-align: center; white-space: nowrap;
+        font-family: 'Pretendard Variable', 'Noto Sans KR', sans-serif; font-weight: 900; color: var(--ink);
         background: repeating-linear-gradient(45deg, var(--gold) 0 14px, #D89B3C 14px 28px);
       }
+      .gs-wt-tape-ghost-big {
+        top: 50%; transform: translateY(calc(-78% - 10px)) rotate(-7deg);
+        padding: 24px 0; font-size: 26px; letter-spacing: 7px;
+        opacity: .25; filter: blur(3px);
+      }
+      .gs-wt-tape-ghost-sm {
+        top: 50%; transform: translateY(calc(40% + 50px)) rotate(6deg);
+        padding: 6px 0; font-size: 11px; letter-spacing: 5px;
+        opacity: .32; filter: blur(1.2px);
+      }
+
+      .gs-wt-problem-title {
+        font: 800 clamp(17px, 4.6vw, 22px)/1.4 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        white-space: nowrap;
+      }
+      .gs-wt-problem-title .gs-warn { font-style: normal; color: var(--gold); }
 
       .gs-wt-problem {
         width: 100%; text-align: left; border-radius: 14px;
         background: rgba(255,77,157,.09); padding: 18px 17px;
         display: flex; flex-direction: column; gap: 10px;
       }
-      .gs-wt-problem strong { font-family: 'Gaegu', cursive; font-size: 24px; color: var(--pink); }
-      .gs-wt-problem p { margin: 0; font-size: 15.5px; line-height: 1.7; color: #FFEFE0; }
-      .gs-wt-problem b { color: var(--pink); }
-      .gs-wt-problem ul { margin: 0; padding-left: 4px; list-style: none; display: flex; flex-direction: column; gap: 5px; }
-      .gs-wt-problem li { font-family: 'Gaegu', cursive; font-size: 19px; color: #FFEFE0; }
-      .gs-wt-chill { margin: 0; font-family: 'Gaegu', cursive; font-size: 21px; line-height: 1.5; color: #FFC9E2; }
-      .gs-wt-chill b { color: #fff; text-shadow: 0 0 14px rgba(255,77,157,.8); }
+      .gs-wt-problem strong { font-family: 'Gaegu', cursive; font-size: 24px; color: #FF8FC2; }
+      .gs-wt-problem p { margin: 0; font-size: 15.5px; line-height: 1.7; color: #FFF3E6; }
+      .gs-wt-problem b { color: #FF8FC2; }
+      .gs-wt-problem ul { margin: 0; padding-left: 4px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+      .gs-wt-problem li { font: 700 15.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: #FFF3E6; }
+      .gs-wt-chill { margin: 0; font-family: 'Gaegu', cursive; font-size: 21px; line-height: 1.5; color: #FFD3E8; }
+      .gs-wt-chill b { color: #fff; }
 
       .gs-wt-actions { display: flex; gap: 8px; width: 100%; }
       .gs-wt-actions span {
         flex: 1; min-width: 0; padding: 14px 9px; border-radius: 13px;
         background: #150812;
-        font-size: 14.5px; line-height: 1.6; color: #E8C8D8;
+        font-size: 14.5px; line-height: 1.6; color: #F1DBE7;
       }
       .gs-wt-actions b { color: var(--gold); font-size: 16px; }
       .gs-wt-throw {
@@ -1376,13 +1500,13 @@ function StyleTag() {
       .gs-wt-only b { color: var(--gold); }
 
       .gs-wt-hand { font-size: 52px; line-height: 1; filter: drop-shadow(0 0 14px rgba(255,77,157,.5)); }
-      .gs-wt-stupid { margin: 0; font-family: 'Black Han Sans', sans-serif; font-size: 44px; color: var(--pink); text-shadow: 0 0 26px rgba(255,77,157,.7); }
-      .gs-wt-stupid small { display: block; font-size: 17px; color: var(--muted); margin-top: 2px; }
+      .gs-wt-stupid { margin: 0; font: 400 38px 'yg-jalnan', 'Pretendard Variable', sans-serif; color: var(--pink); text-shadow: 0 0 26px rgba(255,77,157,.7); }
+      .gs-wt-stupid small { display: block; font-size: 17px; font-weight: 500; color: var(--muted); margin-top: 2px; }
 
       .gs-wt-lifeline { display: flex; align-items: center; gap: 10px; width: 100%; }
-      .gs-wt-lifeline span { font: 700 12.5px 'Noto Sans KR', sans-serif; color: var(--gold); white-space: nowrap; }
+      .gs-wt-lifeline span { font: 700 12.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); white-space: nowrap; }
       .gs-wt-lifeline i { flex: 1; height: 2px; background: linear-gradient(90deg, var(--gold), var(--pink)); box-shadow: 0 0 10px rgba(255,77,157,.6); }
-      .gs-wt-destiny { margin: 0; font-family: 'Black Han Sans', sans-serif; font-size: 32px; color: var(--gold); text-shadow: 0 0 24px rgba(240,180,80,.7); }
+      .gs-wt-destiny { margin: 0; font: 400 27px 'yg-jalnan', 'Pretendard Variable', sans-serif; color: var(--gold); text-shadow: 0 0 24px rgba(240,180,80,.7); }
 
       /* 데이터 컷 — 풀폭 밴드 (배경색으로만 구분) */
       .gs-wt-data {
@@ -1392,7 +1516,7 @@ function StyleTag() {
       .gs-wt-chartdate { margin: -6px 0 2px; font-size: 13.5px; color: var(--muted); }
       .gs-tengods { display: flex; flex-wrap: wrap; gap: 7px; }
       .gs-tengod {
-        font: 700 13.5px 'Noto Sans KR', sans-serif; padding: 5px 12px; border-radius: 999px;
+        font: 700 13.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; padding: 5px 12px; border-radius: 999px;
         color: #8A6376; background: #140710; border: 1px solid var(--line);
       }
       .gs-tengod.on {
@@ -1402,7 +1526,7 @@ function StyleTag() {
       .gs-wt-fake {
         margin: 2px 0 0; align-self: flex-end; padding: 4px 12px;
         border: 2px solid rgba(255,77,157,.65); border-radius: 8px; transform: rotate(-6deg);
-        font: 900 13px 'Noto Sans KR', sans-serif; letter-spacing: 2px; color: var(--pink); opacity: .85;
+        font: 900 13px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: 2px; color: var(--pink); opacity: .85;
       }
 
       /* CTA 컷 */
@@ -1416,9 +1540,9 @@ function StyleTag() {
       .gs-wt-center { justify-content: center; }
       .gs-wt-reviews { display: flex; flex-direction: column; gap: 6px; }
       .gs-wt-reviews strong { font-size: 16px; color: var(--gold); }
-      .gs-wt-reviews span { font-family: 'Gaegu', cursive; font-size: 20px; color: #FFEFE0; }
-      .gs-wt-limit { margin: 0; font-size: 16px; line-height: 1.7; color: #E8C8D8; }
-      .gs-wt-limit b { color: var(--pink); font-size: 18px; }
+      .gs-wt-reviews span { font-family: 'Gaegu', cursive; font-size: 20px; color: #FFFCF5; }
+      .gs-wt-limit { margin: 0; font-size: 16px; line-height: 1.7; color: #F1DBE7; }
+      .gs-wt-limit b { color: #FF6FB0; font-size: 18px; }
       .gs-wt-nudge { margin: 0; font-size: 14px; line-height: 1.7; color: var(--muted); }
       .gs-wt-nudge b { color: var(--gold); }
 
@@ -1426,11 +1550,11 @@ function StyleTag() {
       .gs-pillars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
       .gs-pillar { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 2px; background: #140710; border-radius: 12px; }
       .gs-pillar-label { font-size: 12.5px; font-weight: 700; color: var(--muted); }
-      .gs-pillar-stem { font-family: 'Black Han Sans', sans-serif; font-size: 31px; line-height: 1; }
-      .gs-pillar-branch { font-family: 'Black Han Sans', sans-serif; font-size: 26px; line-height: 1; }
+      .gs-pillar-stem { font: 700 29px 'Pretendard Variable', 'Noto Sans KR', sans-serif; line-height: 1.1; }
+      .gs-pillar-branch { font: 700 24px 'Pretendard Variable', 'Noto Sans KR', sans-serif; line-height: 1.1; }
       .gs-core { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 16px; background: rgba(240,180,80,.12); border-radius: 12px; }
       .gs-core span { font-size: 13.5px; font-weight: 700; color: var(--muted); }
-      .gs-core strong { font-family: 'Black Han Sans', sans-serif; font-size: 18px; color: var(--gold); text-align: right; line-height: 1.3; }
+      .gs-core strong { font: 800 17px/1.35 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); text-align: right; }
 
       /* 오행 밸런스 */
       .gs-bars { display: flex; flex-direction: column; gap: 10px; }
@@ -1442,7 +1566,7 @@ function StyleTag() {
 
       /* 키-밸류 */
       .gs-kv { display: flex; flex-direction: column; gap: 4px; padding: 13px 15px; background: rgba(255,77,157,.08); border-radius: 12px; }
-      .gs-kv-key { font: 700 13.5px 'Noto Sans KR', sans-serif; color: var(--gold); }
+      .gs-kv-key { font: 700 13.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); }
       .gs-kv-val { font-size: 15.5px; line-height: 1.65; color: #FFEFE0; margin: 0; }
 
       .gs-chip.gold { color: var(--ink); background: var(--gold); border-color: var(--gold); }
@@ -1451,15 +1575,15 @@ function StyleTag() {
       .gs-flow { display: flex; gap: 8px; }
       .gs-flow-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 14px 8px; background: #140710; border-radius: 13px; text-align: center; }
       .gs-flow-age { font-size: 12.5px; font-weight: 700; color: var(--muted); }
-      .gs-flow-gz { font-family: 'Black Han Sans', sans-serif; font-size: 25px; color: var(--pink); }
+      .gs-flow-gz { font: 700 23px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--pink); }
       .gs-flow-card p { font-size: 13px; line-height: 1.55; color: #FFEFE0; margin: 0; }
 
       /* 연도별 운세 */
       .gs-years { display: flex; flex-direction: column; gap: 8px; }
       .gs-year-card { display: grid; grid-template-columns: 56px 84px 1fr; align-items: center; gap: 10px; padding: 13px 15px; background: #140710; border-radius: 12px; }
-      .gs-year-num { font-family: 'Black Han Sans', sans-serif; font-size: 18px; color: var(--gold); }
+      .gs-year-num { font: 800 17px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); }
       .gs-year-grade { font-size: 13px; font-weight: 700; color: var(--pink); line-height: 1.35; }
-      .gs-year-card p { min-width: 0; font-size: 13px; line-height: 1.55; color: #E8C8D8; margin: 0; }
+      .gs-year-card p { min-width: 0; font-size: 13px; line-height: 1.55; color: #F1DBE7; margin: 0; }
 
       /* sticky bar */
       .gs-sticky {
@@ -1477,7 +1601,7 @@ function StyleTag() {
       .gs-sticky-price s { color: #8A6376; font-size: 13px; margin-right: 6px; }
       .gs-sticky-price b { color: var(--gold); font-size: 17px; text-shadow: 0 0 10px rgba(240,180,80,.5); }
       .gs-sticky-btn {
-        font: 700 15px 'Noto Sans KR', sans-serif;
+        font: 700 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         padding: 13px 20px; border: 0; border-radius: 999px;
         background: linear-gradient(120deg, var(--pink), var(--deep)); color: #fff;
         cursor: pointer; white-space: nowrap;
@@ -1507,7 +1631,7 @@ function StyleTag() {
         border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 14px; cursor: pointer;
       }
       .gs-sheet-done { display: flex; flex-direction: column; gap: 12px; text-align: center; padding: 16px 0; }
-      .gs-apply-title { font-family: 'Black Han Sans', sans-serif; font-size: 24px; margin: 0; text-shadow: 0 0 16px rgba(255,77,157,.45); }
+      .gs-apply-title { font: 400 22px 'yg-jalnan', 'Pretendard Variable', sans-serif; margin: 0; text-shadow: 0 0 16px rgba(255,77,157,.45); }
       .gs-apply-sub { font-size: 14px; line-height: 1.6; margin: 0; color: var(--muted); }
       .gs-apply-sub b { color: var(--text); }
 
@@ -1527,7 +1651,7 @@ function StyleTag() {
       .gs-tier-desc { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
       .gs-tier-badge {
         position: absolute; top: -11px; right: 12px;
-        font: 700 11px 'Noto Sans KR', sans-serif; color: var(--ink);
+        font: 700 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--ink);
         background: var(--gold); border-radius: 999px; padding: 2px 10px;
         box-shadow: 0 0 12px rgba(240,180,80,.5);
       }
