@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   calcAll, STEM_EL, BRANCH_EL, EL_KR, EL_HJ, EL_COL, EL_ORD, pick,
+  STEMS as STEMS_HJ, BRANCH as BRANCH_HJ,
 } from "./data/saju.js";
 import {
   CHARS, YONGSIN, GUIIN, SSINSAL, DAEUN_TXT, YEAR_GRADES, TIMES,
@@ -8,7 +9,7 @@ import {
 import { resolveBirthDate } from "./data/calendar.js";
 
 /* ──────────────────────────────────────────────
-   갸루사주 — 심야 점집 에디션 (유이짱 영상 무드 적용)
+   갸루사주 — 심야 점집 에디션 (유이쨩 영상 무드 적용)
    대화형 입력 → 메일 발송 + 온페이지 풀 사주 풀이 → 스코메(하단 고정바)
 
    [에셋 배치] Vite 프로젝트의 public/assets/garusaju/ 폴더에:
@@ -37,7 +38,9 @@ const ASSET = {
   page07: landingUrl("Page_07.jpeg"),   // 정면 미소 클로즈업
   page08: landingUrl("Page_08.jpeg"),   // 귀엽게 올려다보는
   page10: landingUrl("Page_10.jpeg"),   // 살짝 고민하는 표정
+  page14: landingUrl("Page_14.jpeg"),   // 키티&보석 붓으로 상대를 가리키는
   page17: landingUrl("Page_17.jpeg"),   // 앉아서 내려다보는
+  page18: landingUrl("Page_18.jpeg"),   // 스탑 손동작
 };
 
 /* ===== 일주 계산 (앵커: 1949-10-01 = 갑자일, JDN 2433191) ===== */
@@ -68,13 +71,30 @@ function isValidBirth(y, m, d, isLunar = false) {
 /* 시진 선택 그리드용 — '모름' 제외한 12지신 시간대 */
 const TIME_CELLS = TIMES.filter((t) => t.v >= 0);
 
+/* ===== 추가 프로필 입력 (연애 상태 · 기간 · 직업) ===== */
+const RELATIONSHIPS = [
+  { v: "solo", t: "솔로", q: "솔로 기간은 얼마나 됐어~?" },
+  { v: "dating", t: "연애 중", q: "연애한 지 얼마나 됐어~?" },
+  { v: "married", t: "결혼", q: "결혼한 지 얼마나 됐어~?" },
+];
+const DURATIONS = ["3개월 미만", "3개월~1년", "1~3년", "3년 이상"];
+const JOBS = ["학생", "취준생", "직장인", "프리랜서", "자영업·사업", "기타"];
+const STEP_TITLES = ["이름", "생년월일", "태어난 시간", "성별", "연애 상태", "기간", "직업", "결과 받을 메일"];
+
+/* 만 나이 계산 — 양력 변환된 생일 기준 */
+function calcAge(solar) {
+  const now = new Date();
+  let age = now.getFullYear() - solar.year;
+  if (now.getMonth() + 1 < solar.month || (now.getMonth() + 1 === solar.month && now.getDate() < solar.day)) age -= 1;
+  return age;
+}
+
 /* ===== 일주 미리보기(간이) — 결과 헤더 라벨용 ===== */
 function iljuLabel(si, bi) {
   return `${STEMS[si]}${BRANCHES[bi]}일주`;
 }
 
 /* ===== 십성(十星) — 일간 기준 오행 생극 + 음양으로 판별 ===== */
-const TEN_GODS = ["비견", "겁재", "식신", "상관", "편재", "정재", "편관", "정관", "편인", "정인"];
 const EL_GEN = { wood: "fire", fire: "earth", earth: "metal", metal: "water", water: "wood" };   // 내가 생하는
 const EL_CTRL = { wood: "earth", earth: "water", water: "fire", fire: "metal", metal: "wood" };  // 내가 극하는
 
@@ -88,17 +108,40 @@ function tenGodOf(daySi, el, yang) {
   return same ? "편인" : "정인"; // el이 일간을 생함
 }
 
-/* 명식에 실제로 들어있는 십성 집합 (년·월·시 천간 + 네 지지 본기 기준) */
-function presentTenGods(pillars) {
-  const dp = pillars[2];
-  const found = new Set();
-  pillars.forEach((p, i) => {
-    if (p.unknown) return;
-    if (i !== 2) found.add(tenGodOf(dp.si, STEM_EL[p.si], p.si % 2 === 0));
-    found.add(tenGodOf(dp.si, BRANCH_EL[p.bi], p.bi % 2 === 0));
-  });
-  return found;
+/* ===== 십이운성(十二運星) — 일간 기준, 양간 순행 · 음간 역행 ===== */
+const UNSEONG = ["장생", "목욕", "관대", "건록", "제왕", "쇠", "병", "사", "묘", "절", "태", "양"];
+// 각 천간의 장생(長生) 지지 인덱스: 甲→亥, 乙→午, 丙·戊→寅, 丁·己→酉, 庚→巳, 辛→子, 壬→申, 癸→卯
+const UNSEONG_BIRTH = [11, 6, 2, 9, 2, 9, 5, 0, 8, 3];
+function unseongOf(daySi, bi) {
+  const start = UNSEONG_BIRTH[daySi];
+  const step = daySi % 2 === 0 ? (bi - start + 12) % 12 : (start - bi + 12) % 12;
+  return UNSEONG[step];
 }
+
+/* ===== 십이신살(十二神煞) — 일지 삼합 기준 ===== */
+const SINSAL12 = ["지살", "도화살", "월살", "망신살", "장성살", "반안살", "역마살", "육해살", "화개살", "겁살", "재살", "천살"];
+// 삼합 장생지: 신자진(水)→申, 인오술(火)→寅, 사유축(金)→巳, 해묘미(木)→亥
+const SAMHAP_START = [8, 5, 2, 11, 8, 5, 2, 11, 8, 5, 2, 11];
+function sinsalOf(dayBi, bi) {
+  return SINSAL12[(bi - SAMHAP_START[dayBi] + 12) % 12];
+}
+
+/* 십이신살 갸루 해설 — 명식에 실제로 뜬 신살만 골라 보여준다 */
+const SINSAL_DESC = {
+  지살: "새로운 곳에서 길을 여는 신살이야~ 낯선 환경에서도 금방 적응하는 개척자 타입!!",
+  도화살: "매력과 인기의 신살이야!! 이성한테 특히 인기 완전 많아~ 잘만 쓰면 최강 무기거든?!",
+  월살: "씨앗을 품고 때를 기다리는 신살이야~ 조급해하지 않으면 제일 빛나는 타입!!",
+  망신살: "솔직함이 무기이자 약점인 신살이야! 오픈 마인드로 살면 오히려 매력 폭발~",
+  장성살: "타고난 지도자 기질이야!! 권위와 인정 받는 운이 있어~ 리더 해봐 진짜로!",
+  반안살: "말 안장에 올라타는 출세운 신살이야!! 주변의 인정과 승진운이 따라와~",
+  역마살: "이동과 변화의 신살이야~ 끊임없이 움직이며 기회 찾아! 해외운도 완전 좋아!!",
+  육해살: "눈치 빠르고 센스 만점인 신살이야~ 사람 마음 읽는 속도 진짜 빨라!!",
+  화개살: "예술적 감수성의 신살이야! 독특하고 신비로운 매력이 있어~ 완전 아티스트 기질!!",
+  겁살: "승부사 기질의 신살이야! 위기를 기회로 바꾸는 강한 멘탈 가졌어~",
+  재살: "머리 회전 초고속 전략가 신살이야~ 수 싸움에서 지는 법이 없거든?!",
+  천살: "하늘이 시험하는 만큼 크게 크는 신살이야! 버틴 만큼 단단해지는 타입~",
+};
+
 
 /* ===== 전체 풀이 데이터 구성 (잠자던 사주 엔진 + 텍스트 데이터 연결) ===== */
 function buildReading(solar, hour, name, gender, original) {
@@ -106,15 +149,26 @@ function buildReading(solar, hour, name, gender, original) {
   const { rng, pillars, ec, dom, char, daeun, sj, vs } = res;
   const labels = ["년주", "월주", "일주", "시주"];
 
-  // 전통 만세력 표기 순서: 시주 → 일주 → 월주 → 연주
+  // 전통 만세력 표기 순서: 시주 → 일주 → 월주 → 연주 (글자는 한자, 십성 라벨 포함)
+  const dsi = pillars[2].si;
+  const dbi = pillars[2].bi;
   const pillarView = pillars.map((p, i) => ({
     label: labels[i],
-    stem: p.unknown ? "?" : STEMS[p.si],
-    branch: p.unknown ? "?" : BRANCHES[p.bi],
+    stem: p.unknown ? "?" : STEMS_HJ[p.si],
+    branch: p.unknown ? "?" : BRANCH_HJ[p.bi],
     stemEl: p.unknown ? null : STEM_EL[p.si],
     branchEl: p.unknown ? null : BRANCH_EL[p.bi],
+    stemGod: p.unknown ? "—" : i === 2 ? "일간(나)" : tenGodOf(dsi, STEM_EL[p.si], p.si % 2 === 0),
+    branchGod: p.unknown ? "—" : tenGodOf(dsi, BRANCH_EL[p.bi], p.bi % 2 === 0),
+    unseong: p.unknown ? "—" : unseongOf(dsi, p.bi),
+    sinsal: p.unknown ? "—" : sinsalOf(dbi, p.bi),
+    isDay: i === 2,
     unknown: !!p.unknown,
   })).reverse();
+
+  // 명식에 실제로 뜬 신살 목록 (중복 제거, 차트 표기 순서 유지)
+  const sinsalView = [...new Set(pillarView.filter((p) => !p.unknown).map((p) => p.sinsal))]
+    .map((n) => ({ n, d: SINSAL_DESC[n] }));
 
   const maxEl = Math.max(1, ...EL_ORD.map((el) => ec[el]));
   const elBars = EL_ORD.map((el) => ({
@@ -146,7 +200,7 @@ function buildReading(solar, hour, name, gender, original) {
     const samjae = sj.find((s) => s.year === yr);
     return {
       year: yr, grade: grade.g,
-      desc: samjae ? `${samjae.type}삼재 — 서두르기보다 점검이 먼저야` : grade.d,
+      desc: samjae ? `${samjae.type}삼재, 서두르기보다 점검이 먼저야` : grade.d,
     };
   });
 
@@ -154,10 +208,9 @@ function buildReading(solar, hour, name, gender, original) {
     name, original,
     iljuLabel: iljuLabel(dp.si, dp.bi),
     animal: BRANCH_ANIMAL[dp.bi],
-    pillarView, elBars,
+    pillarView, sinsalView, elBars,
     domKr: EL_KR[dom], domHj: EL_HJ[dom],
     char, profile,
-    tenGods: presentTenGods(pillars),
     moneyType, relationTrap, luckyAction, sal, sal2, gi,
     daeunView, yearView, vs,
   };
@@ -188,7 +241,7 @@ const won = (n) => "₩" + n.toLocaleString("ko-KR");
 /* ===== 메인 ===== */
 export default function GaruSajuNight() {
   const [phase, setPhase] = useState("form"); // form | result
-  const [form, setForm] = useState({ name: "", by: "", bm: "", bd: "", calendarType: "solar", bt: "", timeUnknown: false, gender: "", email: "", agree: false });
+  const [form, setForm] = useState({ name: "", by: "", bm: "", bd: "", calendarType: "solar", bt: "", timeUnknown: false, gender: "", relationship: "", relationDuration: "", job: "", email: "", agree: false });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [reading, setReading] = useState(null);
@@ -240,6 +293,10 @@ export default function GaruSajuNight() {
         birthSolar: `${solar.year}-${String(solar.month).padStart(2, "0")}-${String(solar.day).padStart(2, "0")}`,
         birthTime: timeLabel || "모름",
         gender,
+        age: calcAge(solar),
+        relationship: (RELATIONSHIPS.find((r) => r.v === form.relationship) || {}).t || "미입력",
+        relationDuration: form.relationDuration || "미입력",
+        job: form.job || "미입력",
         ilju: result.iljuLabel,
         dominantElement: result.domKr,
         submittedAt: new Date().toISOString(),
@@ -293,7 +350,7 @@ function HeroVideo() {
       <img
         className="gs-hero-video"
         src={ASSET.heroPoster}
-        alt="사주 리딩을 시작하는 유이짱"
+        alt="사주 리딩을 시작하는 유이쨩"
       />
     );
   }
@@ -309,18 +366,19 @@ function HeroVideo() {
         loop
         playsInline
         onError={() => setFailed(true)}
-        aria-label="촛불 앞에서 사주 리딩을 시작하는 유이짱"
+        aria-label="촛불 앞에서 사주 리딩을 시작하는 유이쨩"
       />
       <div className="gs-hero-glow" aria-hidden="true" />
     </div>
   );
 }
 
-/* ===== 1단계: 대화형 입력 폼 (인트로 → ①이름·생일 → ②시간·성별 → ③이메일) ===== */
-const INPUT_STEPS = 3; // 인트로 제외 입력 단계 수
+/* ===== 1단계: 대화형 입력 폼 — 질문 하나당 한 단계씩
+   (인트로 → ①이름 → ②생일 → ③시간 → ④성별 → ⑤연애 상태 → ⑥기간 → ⑦직업 → ⑧이메일) ===== */
+const INPUT_STEPS = 8; // 인트로 제외 입력 단계 수
 
 function FormScreen({ form, onChange, submit, sending, error }) {
-  const [step, setStep] = useState(0); // 0=인트로, 1=이름·생일, 2=시간·성별, 3=이메일
+  const [step, setStep] = useState(0); // 0=인트로, 1=이름, 2=생일, 3=시간, 4=성별, 5=연애, 6=기간, 7=직업, 8=이메일
   const [stepError, setStepError] = useState("");
 
   const setDigits = (key, max) => (e) =>
@@ -330,24 +388,47 @@ function FormScreen({ form, onChange, submit, sending, error }) {
 
   const timeOk = form.timeUnknown || form.bt !== "";
 
+  /* 생일이 유효하면 만 나이 미리 보여주기 */
+  const birthSolar = isValidBirth(Number(form.by), Number(form.bm), Number(form.bd), form.calendarType === "lunar")
+    ? resolveBirthDate(Number(form.by), Number(form.bm), Number(form.bd), form.calendarType === "lunar")
+    : null;
+  const previewAge = birthSolar ? calcAge(birthSolar) : null;
+
+  const relationQ = (RELATIONSHIPS.find((r) => r.v === form.relationship) || {}).q;
+
   const next = () => {
     setStepError("");
     if (step === 0) {
       setStep(1);
     } else if (step === 1) {
       if (!form.name.trim()) return setStepError("이름을 알려줘야 시작할 수 있어요!");
-      if (!isValidBirth(Number(form.by), Number(form.bm), Number(form.bd), form.calendarType === "lunar"))
-        return setStepError("생년월일을 다시 확인해 주세요. (음력은 평달 기준)");
       setStep(2);
     } else if (step === 2) {
-      if (!timeOk) return setStepError("시간을 입력하거나 ‘시간 몰라요’를 눌러줘.");
-      if (!form.gender) return setStepError("대운 방향을 위해 성별을 골라줘!");
+      if (!isValidBirth(Number(form.by), Number(form.bm), Number(form.bd), form.calendarType === "lunar"))
+        return setStepError("생년월일을 다시 확인해 주세요. (음력은 평달 기준)");
       setStep(3);
+    } else if (step === 3) {
+      if (!timeOk) return setStepError("시간을 고르거나 ‘시간 몰라요’를 눌러줘.");
+      setStep(4);
+    } else if (step === 4) {
+      if (!form.gender) return setStepError("대운 방향을 위해 성별을 골라줘!");
+      setStep(5);
+    } else if (step === 5) {
+      if (!form.relationship) return setStepError("지금 연애 상태를 골라줘! 연애운 풀이에 꼭 필요해~");
+      setStep(6);
+    } else if (step === 6) {
+      if (!form.relationDuration) return setStepError("기간도 살짝만 알려줘~ 흐름을 봐야 하거든!");
+      setStep(7);
+    } else if (step === 7) {
+      if (!form.job) return setStepError("직업도 골라줘! 재물운이 달라진다구~");
+      setStep(8);
     }
   };
 
   const onEnter = (e) => {
-    if (e.key === "Enter") (step === 3 ? submit() : next());
+    // 한글 IME 조합을 끝내는 Enter는 무시 — 안 그러면 한 번 누른 Enter가 두 단계를 연속 통과시켜 다음 단계에 에러가 미리 뜬다
+    if (e.key !== "Enter" || e.nativeEvent.isComposing || e.repeat) return;
+    (step === 8 ? submit() : next());
   };
 
   return (
@@ -357,29 +438,58 @@ function FormScreen({ form, onChange, submit, sending, error }) {
         <div className="gs-hero-copy">
           <p className="gs-eyebrow">오늘 밤, 바로 펼쳐보는 사주 명식 풀이</p>
           <h1 className="gs-title">갸루<span className="gs-title-pop">사주</span></h1>
-          <p className="gs-sub">유이짱이랑 대화하면 끝~☆</p>
+          <p className="gs-sub">유이쨩이랑 대화하면 끝~☆</p>
         </div>
 
         <section className="gs-chat" aria-label="사주 풀이 신청 대화">
-        <p className="gs-bubble yui">
-          <b className="gs-bubble-who">유이짱</b>
-          {step === 0 && "어서 와~☆ 촛불 켜놓고 기다렸어. 오늘 밤, 네 팔자 전부 봐줄게♡"}
-          {step === 1 && "좋아, 접수~☆ 이름이랑 생일부터 알려줘!"}
-          {step === 2 && `${form.name}! 좋은 이름이다♡ 태어난 시간이랑, 어느 쪽인지도 알려줘~ 시간은 몰라도 괜찮아!`}
-          {step === 3 && "오케이, 접수~☆ 풀이는 바로 보여주고, 메일로도 한 번 더 보내줄게!"}
-        </p>
+        {step > 0 && (
+          <div className="gs-progress" aria-label={`${INPUT_STEPS}단계 중 ${step}단계`}>
+            <span className="gs-progress-track" aria-hidden="true">
+              <i style={{ width: `${(step / INPUT_STEPS) * 100}%` }} />
+            </span>
+            <b className="gs-progress-num">{step}/{INPUT_STEPS}</b>
+          </div>
+        )}
+        <div className="gs-chat-msg" key={`bubble-${step}`}>
+          <img className="gs-chat-avatar" src={assetUrl("yui-cut-smile.jpg")} alt="" aria-hidden="true" />
+          <div className="gs-chat-body">
+            <b className="gs-bubble-who">유이쨩</b>
+            <p className="gs-bubble yui">
+              {step === 0 && "어서 와~☆ 촛불 켜놓고 기다렸어. 오늘 밤, 네 팔자 전부 봐줄게♡"}
+              {step === 1 && "좋아, 접수~☆ 먼저 이름부터 알려줘!"}
+              {step === 2 && `${form.name}! 좋은 이름이다♡ 생일은 언제야~?`}
+              {step === 3 && "태어난 시간도 알려줘~ 몰라도 괜찮아!"}
+              {step === 4 && "대운 방향을 봐야 하니까~ 성별도 골라줘☆"}
+              {step === 5 && "이제 진짜 중요한 거~☆ 지금 연애하고 있어?♡"}
+              {step === 6 && (relationQ || "기간은 얼마나 됐어~?")}
+              {step === 7 && "마지막 질문~! 요즘 뭐 하면서 지내?☆ 직업 따라 재물운이 달라지거든♡"}
+              {step === 8 && "오케이, 접수~☆ 풀이는 바로 보여주고, 메일로도 한 번 더 보내줄게!"}
+            </p>
+          </div>
+        </div>
 
-        <div className="gs-step-panel" onKeyDown={onEnter}>
+        <div className="gs-step-panel" key={`panel-${step}`} onKeyDown={onEnter}>
+          {step > 0 && <span className="gs-q-chip">Q{step}. {STEP_TITLES[step - 1]}</span>}
           {step === 0 && (
-            <button className="gs-cta" onClick={next}>유이짱에게 사주 보러가기 ☆</button>
+            <button className="gs-cta" onClick={next}>유이쨩에게 사주 보러가기 ☆</button>
           )}
 
           {step === 1 && (
             <>
               <input className="gs-input" value={form.name} onChange={onChange("name")} placeholder="이름 입력" maxLength={20} autoFocus aria-label="이름" />
+              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
+              <div className="gs-step-nav">
+                <button className="gs-back" onClick={() => setStep(0)}>← 이전</button>
+                <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
               <div className="gs-date-row" aria-label="생년월일 직접 입력">
                 <label className="gs-date-cell">
-                  <input className="gs-input" inputMode="numeric" value={form.by} onChange={setDigits("by", 4)} placeholder="1999" aria-label="년" />
+                  <input className="gs-input" inputMode="numeric" value={form.by} onChange={setDigits("by", 4)} placeholder="1999" autoFocus aria-label="년" />
                   <span>년</span>
                 </label>
                 <label className="gs-date-cell">
@@ -406,15 +516,18 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               {form.calendarType === "lunar" && (
                 <p className="gs-hint">음력은 평달 기준으로 양력 변환해서 볼게~</p>
               )}
+              {previewAge !== null && (
+                <p className="gs-hint">오~ 만 {previewAge}세구나! 접수했어♡</p>
+              )}
               {stepError && <p className="gs-error" role="alert">{stepError}</p>}
               <div className="gs-step-nav">
-                <button className="gs-back" onClick={() => setStep(0)}>← 이전</button>
+                <button className="gs-back" onClick={() => setStep(1)}>← 이전</button>
                 <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
               </div>
             </>
           )}
 
-          {step === 2 && (
+          {step === 3 && (
             <>
               <div className="gs-time-grid" role="group" aria-label="태어난 시진 선택">
                 {TIME_CELLS.map((t) => (
@@ -438,7 +551,17 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               >
                 {form.timeUnknown ? "✓ 시간 몰라도 괜찮아~" : "시간 몰라요 (시주 빼고 볼게)"}
               </button>
-              <div className="gs-toggle">
+              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
+              <div className="gs-step-nav">
+                <button className="gs-back" onClick={() => setStep(2)}>← 이전</button>
+                <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
+              </div>
+            </>
+          )}
+
+          {step === 4 && (
+            <>
+              <div className="gs-toggle" role="group" aria-label="성별 선택">
                 {[["f", "여자"], ["m", "남자"]].map(([v, t]) => (
                   <button
                     key={v}
@@ -453,13 +576,82 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               </div>
               {stepError && <p className="gs-error" role="alert">{stepError}</p>}
               <div className="gs-step-nav">
-                <button className="gs-back" onClick={() => setStep(1)}>← 이전</button>
+                <button className="gs-back" onClick={() => setStep(3)}>← 이전</button>
                 <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
               </div>
             </>
           )}
 
-          {step === 3 && (
+          {step === 5 && (
+            <>
+              <div className="gs-toggle" role="group" aria-label="연애 상태 선택">
+                {RELATIONSHIPS.map((r) => (
+                  <button
+                    key={r.v}
+                    type="button"
+                    className={`gs-toggle-btn ${form.relationship === r.v ? "on" : ""}`}
+                    aria-pressed={form.relationship === r.v}
+                    onClick={() => setValue("relationship", r.v)}
+                  >
+                    {r.t}
+                  </button>
+                ))}
+              </div>
+              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
+              <div className="gs-step-nav">
+                <button className="gs-back" onClick={() => setStep(4)}>← 이전</button>
+                <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
+              </div>
+            </>
+          )}
+
+          {step === 6 && (
+            <>
+              <div className="gs-pick-grid gs-duration-grid" role="group" aria-label="기간 선택">
+                {DURATIONS.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`gs-toggle-btn ${form.relationDuration === d ? "on" : ""}`}
+                    aria-pressed={form.relationDuration === d}
+                    onClick={() => setValue("relationDuration", d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
+              <div className="gs-step-nav">
+                <button className="gs-back" onClick={() => setStep(5)}>← 이전</button>
+                <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
+              </div>
+            </>
+          )}
+
+          {step === 7 && (
+            <>
+              <div className="gs-pick-grid" role="group" aria-label="직업 선택">
+                {JOBS.map((j) => (
+                  <button
+                    key={j}
+                    type="button"
+                    className={`gs-toggle-btn ${form.job === j ? "on" : ""}`}
+                    aria-pressed={form.job === j}
+                    onClick={() => setValue("job", j)}
+                  >
+                    {j}
+                  </button>
+                ))}
+              </div>
+              {stepError && <p className="gs-error" role="alert">{stepError}</p>}
+              <div className="gs-step-nav">
+                <button className="gs-back" onClick={() => setStep(6)}>← 이전</button>
+                <button className="gs-cta gs-cta-grow" onClick={next}>다음 →</button>
+              </div>
+            </>
+          )}
+
+          {step === 8 && (
             <>
               <input className="gs-input" type="email" value={form.email} onChange={onChange("email")} placeholder="yui@example.com" autoFocus aria-label="결과지 받을 이메일" />
               <label className="gs-agree">
@@ -468,7 +660,7 @@ function FormScreen({ form, onChange, submit, sending, error }) {
               </label>
               {error && <p className="gs-error" role="alert">{error}</p>}
               <div className="gs-step-nav">
-                <button className="gs-back" onClick={() => setStep(2)}>← 이전</button>
+                <button className="gs-back" onClick={() => setStep(7)}>← 이전</button>
                 <button className="gs-cta gs-cta-grow" onClick={submit} disabled={sending}>
                   {sending ? "펼치는 중…" : "내 사주 풀이 보기 ♡"}
                 </button>
@@ -478,13 +670,6 @@ function FormScreen({ form, onChange, submit, sending, error }) {
           )}
         </div>
 
-        {step > 0 && (
-          <div className="gs-progress" aria-label={`${INPUT_STEPS}단계 중 ${step}단계`}>
-            {Array.from({ length: INPUT_STEPS }, (_, i) => (
-              <span key={i} className={`gs-dot ${i < step ? "on" : ""}`} />
-            ))}
-          </div>
-        )}
         </section>
       </header>
     </main>
@@ -547,7 +732,7 @@ function CutPhoto({ src, alt, children }) {
 
 const Bubble = ({ who = "yui", children }) => (
   <p className={`gs-bubble ${who}`}>
-    <b className="gs-bubble-who">{who === "yui" ? "유이짱" : "친구"}</b>
+    <b className="gs-bubble-who">{who === "yui" ? "유이쨩" : "친구"}</b>
     {children}
   </p>
 );
@@ -559,22 +744,22 @@ const Balloon = ({ tail = "l", pos = "", children }) => (
   </div>
 );
 
-/* ===== 2단계: 온페이지 풀 사주 풀이 (유이짱 웹툰 26컷) ===== */
+/* ===== 2단계: 온페이지 풀 사주 풀이 (유이쨩 웹툰 26컷) ===== */
 function ResultScreen({ name, reading, openSheet }) {
   if (!reading) return null;
   const {
-    pillarView, elBars, domKr, domHj, char, original, tenGods,
-    moneyType, relationTrap, luckyAction, sal, sal2, gi, daeunView, yearView, vs,
+    pillarView, sinsalView, domKr, domHj, char, original,
+    moneyType, relationTrap, luckyAction, gi, daeunView, yearView, vs,
   } = reading;
-  const nick = `${name}짱`;
+  const nick = `${name}쨩`;
 
   return (
     <main className="gs-page gs-page-pad gs-result">
       {/* 1컷 — 커버 */}
       <Cut num={1} className="gs-wt-photo-cut gs-wt-cover">
-        <CutPhoto src={ASSET.page01} alt="사주책 뒤에 숨어 눈만 빼꼼 내민 유이짱">
+        <CutPhoto src={ASSET.page01} alt="사주책 뒤에 숨어 눈만 빼꼼 내민 유이쨩">
           <div className="gs-wt-overlay">
-            <p className="gs-wt-eyebrow">✨ 유이짱의 초특급 사주 분석 ✨</p>
+            <p className="gs-wt-eyebrow">✨ 유이쨩의 초특급 사주 분석 ✨</p>
             <p className="gs-wt-quote">너... 생각보다 훨씬<br />흥미로운 팔자네~?<i className="gs-emo">(¬‿¬)♡</i></p>
           </div>
         </CutPhoto>
@@ -582,28 +767,28 @@ function ResultScreen({ name, reading, openSheet }) {
 
       {/* 2컷 — 인사 */}
       <Cut num={2} className="gs-wt-photo-cut">
-        <CutPhoto src={ASSET.page02} alt="손을 흔들며 인사하는 유이짱">
-          <Balloon tail="r" pos="gs-balloon-tl">{birthLineText(original)}<br /><b>{nick}~!</b></Balloon>
-          <Balloon tail="up" pos="gs-balloon-br">너 사주...<br /><b>너~무 흥미롭다♡</b></Balloon>
+        <CutPhoto src={ASSET.page02} alt="손을 흔들며 인사하는 유이쨩">
+          <Balloon tail="r" pos="gs-balloon-tl"><b>{nick} 안녕~♡</b><br />오늘의 반짝 운명, 열어볼까?</Balloon>
+          <Balloon tail="up" pos="gs-balloon-br">헐 뭐야…<br /><b>너 사주 완전 흥미롭잖아♡</b></Balloon>
           <div className="gs-wt-overlay">
-            <h2 className="gs-wt-title">안녕~!<br />난 <em>유이짱</em>이야♡</h2>
+            <h2 className="gs-wt-title">안녕~!<br />난 <em>유이쨩</em>이야♡</h2>
           </div>
         </CutPhoto>
       </Cut>
 
       {/* 3컷 — 기운 세당 */}
       <Cut num={3} className="gs-wt-photo-cut">
-        <CutPhoto src={ASSET.page03} alt="책 위로 눈만 빼꼼 보이는 유이짱">
+        <CutPhoto src={ASSET.page03} alt="책 위로 눈만 빼꼼 보이는 유이쨩">
           <Balloon tail="r" pos="gs-balloon-tl">옴마나~!<br /><b>너 기운이 꽤 세당?♡</b></Balloon>
           <div className="gs-wt-overlay">
-            <p className="gs-wt-line">너 진짜 보통 팔자가 아닌데~?<br />딱 봐도 알지☆<br />유이짱은 못 속여~<i className="gs-emo">(¬‿¬)♡</i></p>
+            <p className="gs-wt-line">너 진짜 보통 팔자가 아닌데~?<br />딱 봐도 알지☆<br />유이쨩은 못 속여~<i className="gs-emo">(¬‿¬)♡</i></p>
           </div>
         </CutPhoto>
       </Cut>
 
       {/* 4컷 — 고민 짚기 */}
       <Cut num={4} className="gs-wt-photo-cut">
-        <CutPhoto src={ASSET.page04} alt="놀란 표정으로 사주책을 펼친 유이짱">
+        <CutPhoto src={ASSET.page04} alt="놀란 표정으로 사주책을 펼친 유이쨩">
           <Balloon tail="l" pos="gs-balloon-tr">이게 고민되는 거지~?</Balloon>
           <Balloon tail="upr" pos="gs-balloon-bl"><b>너 어떤 사람인지도☆<br />너 고민이 뭔지도☆</b><br />딱 봐도 알징~♡</Balloon>
         </CutPhoto>
@@ -624,66 +809,69 @@ function ResultScreen({ name, reading, openSheet }) {
       <Cut num={6} className="gs-wt-text-cut gs-wt-impact">
         <p className="gs-wt-kicker">THE REASON</p>
         <h2 className="gs-wt-title">{nick}이 지금<br />이게 고민되는 이유☆</h2>
-        <p className="gs-wt-answer">유이짱은 알지~♡<br /><b>바로 니 팔자 때문이야</b> <i className="gs-emo">(¬‿¬)✨</i></p>
+        <p className="gs-wt-answer">유이쨩은 알지~♡<br /><b>바로 니 팔자 때문이야</b> <i className="gs-emo">(¬‿¬)✨</i></p>
       </Cut>
 
-      {/* 7컷 — 사주 명식 (실데이터) */}
-      <Cut num={7} className="gs-card gs-wt-data">
-        <SectionHead kicker="四柱命式 · SAJU CHART" title={`${nick}의 사주 명식`} />
-        <p className="gs-wt-chartdate">{birthLineText(original)}</p>
-        <div className="gs-pillars">
+      {/* 7컷 — 사주 명식 (전통 만세력 스타일 + 십이운성/신살) */}
+      <Cut num={7} className="gs-wt-data gs-myeongsik">
+        <div className="gs-ms-head">
+          <span className="gs-ms-kicker">四柱命式</span>
+          <h2 className="gs-ms-title">{nick}의 사주</h2>
+          <p className="gs-ms-date">{birthLineText(original)}</p>
+          <span className="gs-ms-deco" aria-hidden="true">✦ ♡ ✦</span>
+        </div>
+        <div className="gs-ms-grid">
           {pillarView.map((p) => (
-            <div key={p.label} className="gs-pillar">
-              <span className="gs-pillar-label">{p.label}</span>
-              <strong className="gs-pillar-stem" style={p.stemEl ? { color: EL_COL[p.stemEl] } : undefined}>{p.stem}</strong>
-              <b className="gs-pillar-branch" style={p.branchEl ? { color: EL_COL[p.branchEl] } : undefined}>{p.branch}</b>
+            <div key={p.label} className="gs-ms-col">
+              <span className={`gs-ms-god ${p.isDay ? "me" : ""}`}>{p.stemGod}</span>
+              <strong className={`gs-ms-tile el-${p.stemEl || "none"}`}>{p.stem}</strong>
+              <strong className={`gs-ms-tile el-${p.branchEl || "none"}`}>{p.branch}</strong>
+              <span className="gs-ms-god">{p.branchGod}</span>
             </div>
           ))}
         </div>
-        <div className="gs-core">
+        <div className="gs-ms-rows">
+          <div className="gs-ms-row">
+            {pillarView.map((p) => <span key={p.label}>{p.unseong}</span>)}
+          </div>
+          <div className="gs-ms-row gs-ms-sal">
+            {pillarView.map((p) => <span key={p.label}>{p.sinsal}</span>)}
+          </div>
+        </div>
+        <p className="gs-ms-guide">위에서부터 십성 · 십이운성 · 신살이야~♡</p>
+        <div className="gs-ms-core">
           <span>핵심 기운</span>
-          <strong>{domHj} · {domKr} — {char.name}</strong>
+          <strong>{domHj} · {domKr} · {char.name}</strong>
         </div>
-        <div className="gs-bars">
-          {elBars.map((b) => (
-            <div key={b.el} className="gs-bar-row">
-              <span className="gs-bar-name" style={{ color: b.col }}>{b.hj} {b.kr}</span>
-              <span className="gs-bar-track">
-                <span className="gs-bar-fill" style={{ width: `${b.pct}%`, background: b.col }} />
-              </span>
-              <span className="gs-bar-num">{b.n}</span>
-            </div>
-          ))}
-        </div>
-        <p className="gs-sub-label">십성(十星) — 명식에 빛나는 별</p>
-        <div className="gs-tengods">
-          {TEN_GODS.map((g) => (
-            <span key={g} className={`gs-tengod ${tenGods.has(g) ? "on" : ""}`}>{g}</span>
-          ))}
-        </div>
-        <p className="gs-sub-label">신살 분석</p>
-        <div className="gs-chips">
-          <span className="gs-chip">{sal.n}</span>
-          <span className="gs-chip">{sal2.n}</span>
-        </div>
+        {sinsalView.length > 0 && (
+          <div className="gs-ms-salcards">
+            <p className="gs-ms-sallabel">신살 분석</p>
+            {sinsalView.map((s) => (
+              <div key={s.n} className="gs-ms-salcard">
+                <b>{s.n}</b>
+                <p>{s.d}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </Cut>
 
       {/* 8컷 — 흐름 궁금하지 */}
       <Cut num={8} className="gs-wt-photo-cut">
         <Balloon tail="r">니 팔자가 <b>어떻게 흘러가는지</b><br />궁금하지~?♡</Balloon>
-        <CutPhoto src={ASSET.page08} alt="귀엽게 올려다보는 유이짱" />
+        <CutPhoto src={ASSET.page08} alt="귀엽게 올려다보는 유이쨩" />
       </Cut>
 
       {/* 9컷 — 적나라하게 */}
       <Cut num={9} className="gs-wt-text-cut">
-        <h2 className="gs-wt-title">니 눈앞에<br /><em>완전 적나라하게</em><br />보여줄 수 있엉~<i className="gs-emo">(¬‿¬)♡</i></h2>
+        <h2 className="gs-wt-title gs-wt-title-sm">니 눈앞에 <em>완전 적나라하게</em><br />보여줄 수 있엉~<i className="gs-emo">(¬‿¬)♡</i></h2>
         <p className="gs-wt-sparkle" aria-hidden="true">✦ ♡ ✦</p>
       </Cut>
 
       {/* 10컷 — 그런데 말이야 */}
       <Cut num={10} className="gs-wt-photo-cut">
         <Balloon tail="l">그런데 말이야~♡</Balloon>
-        <CutPhoto src={ASSET.page10} alt="살짝 고민하는 표정의 유이짱" />
+        <CutPhoto src={ASSET.page10} alt="살짝 고민하는 표정의 유이쨩" />
       </Cut>
 
       {/* 11컷 — 삐빅 */}
@@ -697,7 +885,7 @@ function ResultScreen({ name, reading, openSheet }) {
       </Cut>
 
       {/* 13컷 — 반복될 문제 */}
-      <Cut num={13} className="gs-wt-text-cut gs-wt-impact">
+      <Cut num={13} className="gs-wt-text-cut gs-wt-impact gs-wt-lace">
         <h2 className="gs-wt-title gs-wt-problem-title"><i className="gs-warn">⚠︎</i> 니 인생에서 <em>반복될 수 있는 문제</em> <i className="gs-warn">⚠︎</i></h2>
         <div className="gs-wt-problem">
           <strong>“알아서 알아주겠지~”</strong>
@@ -712,11 +900,18 @@ function ResultScreen({ name, reading, openSheet }) {
         <p className="gs-wt-chill">근데 더 소름 돋는 건~<br /><b>이게 한 번이 아니라는 거야♡</b></p>
       </Cut>
 
-      {/* 14~15컷 — 방법 + 조언 (한 흐름으로) */}
-      <Cut num={"14~15"} className="gs-wt-text-cut">
-        <h2 className="gs-wt-title">✨ 니 팔자를<br /><em>제대로 쓰는 방법</em> ✨</h2>
-        <Bubble>궁금하지~?♡</Bubble>
-        <span className="gs-wt-divider" aria-hidden="true">✦</span>
+      {/* 14컷 — 방법 (키티 붓으로 가리키는 유이쨩) */}
+      <Cut num={14} className="gs-wt-photo-cut">
+        <CutPhoto src={ASSET.page14} alt="키티 보석 붓으로 상대를 가리키는 유이쨩">
+          <Balloon tail="l" pos="gs-balloon-tr">궁금하지~?♡</Balloon>
+          <div className="gs-wt-overlay">
+            <h2 className="gs-wt-title">✨ 니 팔자를<br /><em>제대로 쓰는 방법</em> ✨</h2>
+          </div>
+        </CutPhoto>
+      </Cut>
+
+      {/* 15컷 — 조언 */}
+      <Cut num={15} className="gs-wt-text-cut">
         <h2 className="gs-wt-title">니 문제는<br /><em>능력 부족이 아니야~☆</em></h2>
         <p className="gs-wt-line">생각보다 너무 오래 참는 거야<i className="gs-emo">(¬‿¬)♡</i></p>
         <div className="gs-wt-actions">
@@ -736,21 +931,28 @@ function ResultScreen({ name, reading, openSheet }) {
       {/* 17컷 — 복채 */}
       <Cut num={17} className="gs-wt-photo-cut">
         <Balloon tail="c">그래서~<br /><b>복채는 준비했어~?♡</b></Balloon>
-        <CutPhoto src={ASSET.page17} alt="의자에 앉아 내려다보는 유이짱">
+        <CutPhoto src={ASSET.page17} alt="의자에 앉아 내려다보는 유이쨩">
           <div className="gs-wt-overlay">
             <p className="gs-wt-only">오직 <b>{nick}</b>만을 위한 이야기✨</p>
           </div>
         </CutPhoto>
       </Cut>
 
-      {/* 18~21컷 — 피날레 빌드업 (한 흐름으로) */}
-      <Cut num={"18~21"} className="gs-wt-text-cut gs-wt-impact gs-wt-finale">
-        <span className="gs-wt-hand" aria-hidden="true">✋</span>
-        <Bubble>잠깐♡<br /><b>무슨 생각해~?☆</b></Bubble>
+      {/* 18컷 — 잠깐 (스탑 손동작) */}
+      <Cut num={18} className="gs-wt-photo-cut">
+        <CutPhoto src={ASSET.page18} alt="손바닥을 내밀어 멈추라는 유이쨩">
+          <div className="gs-wt-overlay">
+            <Bubble>잠깐♡<br /><b>무슨 생각해~?☆</b></Bubble>
+          </div>
+        </CutPhoto>
+      </Cut>
+
+      {/* 19~21컷 — 피날레 빌드업 (한 흐름으로) */}
+      <Cut num={"19~21"} className="gs-wt-text-cut gs-wt-impact gs-wt-finale">
         <h2 className="gs-wt-title">설마~<br />다른 운세 알려주는 곳이랑<br /><em>똑같다고 생각한 건 아니지~?</em></h2>
         <p className="gs-wt-stupid">스투핏~!!<small><i className="gs-emo">(&gt;_&lt;)💦</i></small></p>
         <span className="gs-wt-divider" aria-hidden="true">✦</span>
-        <h2 className="gs-wt-title">유이짱 사주는♡</h2>
+        <h2 className="gs-wt-title">유이쨩 사주는♡</h2>
         <div className="gs-wt-lifeline" aria-hidden="true">
           <span>태어난 순간</span><i /><span>눈을 감는 순간</span>
         </div>
@@ -779,7 +981,7 @@ function ResultScreen({ name, reading, openSheet }) {
         <SectionHead kicker="RELATIONSHIP FILTER" title="인간관계 · 호구 패턴, 가짜 인연까지" />
         <div className="gs-kv">
           <span className="gs-kv-key">네가 약해지는 순간</span>
-          <p className="gs-kv-val">{char.weak} — 컨디션이 흔들리는 날엔 판단도 같이 흔들려.</p>
+          <p className="gs-kv-val">{char.weak}. 컨디션이 흔들리는 날엔 판단도 같이 흔들려.</p>
         </div>
         <p className="gs-body">좋은 사람으로 남으려다 네 기준을 늦게 말하면, 맞지 않는 인연이 오래 눌러앉기 쉬워.</p>
         <p className="gs-wt-fake" aria-hidden="true">FAKE OUT</p>
@@ -805,7 +1007,7 @@ function ResultScreen({ name, reading, openSheet }) {
 
       {/* 25컷 — 재물 흐름 (실데이터) */}
       <Cut num={25} className="gs-card gs-wt-data">
-        <SectionHead kicker="MONEY FLOW" title={`재물 흐름 — ${moneyType}`} />
+        <SectionHead kicker="MONEY FLOW" title={`재물 흐름 · ${moneyType}`} />
         <p className="gs-body">돈 감각이 없는 타입은 아니야. <b>{vs.g} 기운이 강한 날엔 기분 따라 새는 돈만 조심☆</b></p>
         <div className="gs-kv">
           <span className="gs-kv-key">행운 아이템</span>
@@ -829,7 +1031,7 @@ function ResultScreen({ name, reading, openSheet }) {
       {/* 26컷 — CTA */}
       <Cut num={26} className="gs-wt-photo-cut gs-wt-cta">
         <Balloon tail="c">여기까지 봤으면<br /><b>느낌 왔잖아~?<i className="gs-emo">(¬‿¬)♡</i></b><br /><small>근데 이건 겉만 본 거야☆</small></Balloon>
-        <CutPhoto src={ASSET.page02b} alt="활짝 웃으며 손을 흔드는 유이짱" />
+        <CutPhoto src={ASSET.page02b} alt="활짝 웃으며 손을 흔드는 유이쨩" />
         <div className="gs-wt-cta-body">
           <h2 className="gs-wt-title">너 사주 속까지<br /><em>싹 다 뜯어봐주는 곳</em>이 있어♡</h2>
           <div className="gs-chips gs-wt-center">
@@ -934,7 +1136,7 @@ function ApplySheet({ name, email, ilju, applied, onApplied, close }) {
                     )}
                   </div>
                   <p className="gs-tier-desc">{t.desc}</p>
-                  {t.best && <span className="gs-tier-badge">유이짱 픽 ☆</span>}
+                  {t.best && <span className="gs-tier-badge">유이쨩 픽 ☆</span>}
                 </div>
               ))}
             </div>
@@ -973,7 +1175,7 @@ function ApplySheet({ name, email, ilju, applied, onApplied, close }) {
 function StyleTag() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Gaegu:wght@700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700;900&family=Noto+Serif+KR:wght@600;700;900&display=swap');
       @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 
       @font-face {
@@ -1142,37 +1344,51 @@ function StyleTag() {
       }
       .gs-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text); }
       .gs-input {
-        font: 500 16px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
-        padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
-        background: #170B14; color: var(--text); caret-color: var(--pink);
+        font: 600 16px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        padding: 13px 15px; border: 1.5px solid rgba(255,77,157,.26); border-radius: 14px;
+        background: rgba(20,9,18,.85); color: var(--text); caret-color: var(--pink);
+        transition: border-color .15s ease, box-shadow .15s ease;
       }
-      .gs-input::placeholder { color: #7E5870; }
-      .gs-input:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+      .gs-input::placeholder { color: #7E5870; font-weight: 500; }
+      .gs-input:focus-visible {
+        outline: none; border-color: var(--pink);
+        box-shadow: 0 0 0 3px rgba(255,77,157,.2), 0 0 16px rgba(255,77,157,.3);
+      }
       .gs-toggle { display: flex; gap: 8px; }
       .gs-toggle-btn {
-        flex: 1; padding: 11px 0; font: 700 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
-        border: 1px solid var(--line); border-radius: 12px; background: #170B14; color: var(--muted); cursor: pointer;
+        flex: 1; padding: 12px 0; font: 700 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        border: 1.5px solid rgba(255,77,157,.22); border-radius: 999px;
+        background: rgba(20,9,18,.85); color: var(--muted); cursor: pointer;
+        transition: border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .1s ease;
       }
+      .gs-toggle-btn:not(.on):hover { border-color: rgba(255,77,157,.55); color: var(--text); }
+      .gs-toggle-btn:active { transform: scale(.97); }
       .gs-toggle-btn.on {
         background: linear-gradient(120deg, var(--pink), var(--deep)); color: #fff; border-color: var(--pink);
-        box-shadow: 0 0 14px rgba(255,77,157,.5);
+        box-shadow: 0 0 16px rgba(255,77,157,.55);
       }
       .gs-toggle-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-      .gs-time-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      .gs-time-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
       .gs-time-cell {
         display: flex; flex-direction: column; align-items: center; gap: 1px;
-        padding: 8px 2px; border: 1px solid var(--line); border-radius: 11px;
-        background: #170B14; color: var(--muted); cursor: pointer;
+        padding: 9px 2px; border: 1.5px solid rgba(255,77,157,.18); border-radius: 13px;
+        background: rgba(20,9,18,.85); color: var(--muted); cursor: pointer;
+        transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
       }
+      .gs-time-cell:not(.on):hover { border-color: rgba(255,77,157,.5); }
+      .gs-time-cell:active { transform: scale(.96); }
       .gs-time-cell b { font: 700 13.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--text); }
       .gs-time-cell small { font-size: 10px; }
       .gs-time-cell.on {
         background: linear-gradient(120deg, var(--pink), var(--deep));
-        border-color: var(--pink); box-shadow: 0 0 12px rgba(255,77,157,.5);
+        border-color: var(--pink); box-shadow: 0 0 14px rgba(255,77,157,.55);
       }
       .gs-time-cell.on b, .gs-time-cell.on small { color: #fff; }
       .gs-time-cell:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
       .gs-unknown-btn { width: 100%; flex: none; }
+      .gs-pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+      .gs-pick-grid .gs-toggle-btn { padding: 10px 0; font-size: 13.5px; }
+      .gs-duration-grid { grid-template-columns: repeat(2, 1fr); }
       .gs-hint { font-size: 12px; color: var(--gold); margin-top: 6px; }
       .gs-agree { display: flex; gap: 8px; font-size: 12px; line-height: 1.5; align-items: flex-start; color: var(--muted); }
       .gs-agree input { margin-top: 2px; accent-color: var(--deep); }
@@ -1203,14 +1419,41 @@ function StyleTag() {
         max-height: calc(100dvh - 220px);
       }
       .gs-bubble {
-        font-family: 'Gaegu', cursive; font-size: 17px; line-height: 1.35;
+        font: 600 15.5px/1.5 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        letter-spacing: -.01em;
         background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-        padding: 9px 13px; max-width: 92%; color: var(--text);
+        padding: 10px 14px; max-width: 92%; color: var(--text);
       }
       .gs-bubble.yui {
         align-self: flex-start; border-bottom-left-radius: 4px;
         background: rgba(224,0,122,.18); border-color: rgba(255,77,157,.45);
         box-shadow: 0 0 14px rgba(224,0,122,.18);
+      }
+      /* 입력 폼 대화: 메신저식 아바타 + 웹툰풍 흰 말풍선 */
+      .gs-chat-msg {
+        display: flex; gap: 10px; align-items: flex-start;
+        max-width: 94%; animation: gs-step-in .26s ease both;
+      }
+      .gs-chat-avatar {
+        flex: none; width: 46px; height: 46px; border-radius: 50%;
+        object-fit: cover; object-position: 50% 22%;
+        border: 2px solid var(--pink);
+        box-shadow: 0 0 12px rgba(255,77,157,.55), 0 2px 6px rgba(0,0,0,.4);
+        background: #221019;
+      }
+      .gs-chat-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start; }
+      .gs-chat .gs-bubble-who {
+        font: 700 12px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        color: #FFD98D; margin: 0; padding-left: 2px;
+        text-shadow: 0 1px 6px rgba(0,0,0,.8);
+      }
+      .gs-chat .gs-bubble.yui {
+        position: relative;
+        font: 400 16.5px/1.5 'Jua', 'Pretendard Variable', sans-serif; letter-spacing: 0;
+        background: #FFFDF7; border: 2px solid #221019; color: #221019;
+        border-radius: 16px; border-top-left-radius: 4px;
+        padding: 10px 15px 11px; max-width: 100%;
+        box-shadow: 4px 5px 0 rgba(224,0,122,.4);
       }
       .gs-bubble.friend { align-self: flex-end; border-bottom-right-radius: 4px; }
       .gs-bubble.me {
@@ -1220,33 +1463,65 @@ function StyleTag() {
       }
       .gs-bubble-who { display: block; font: 700 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); margin-bottom: 2px; }
       .gs-step-panel {
-        background: rgba(36,18,38,.9); border: 1px solid var(--line); border-radius: 18px;
-        box-shadow: 0 0 20px rgba(224,0,122,.14); padding: 13px 12px;
-        display: flex; flex-direction: column; gap: 9px;
-        backdrop-filter: blur(12px);
+        background: linear-gradient(165deg, rgba(46,20,46,.94), rgba(24,11,24,.96));
+        border: 1px solid rgba(255,77,157,.35); border-radius: 22px;
+        box-shadow: 0 12px 32px rgba(0,0,0,.45), 0 0 24px rgba(224,0,122,.18),
+                    inset 0 1px 0 rgba(255,210,120,.08);
+        padding: 15px 14px;
+        display: flex; flex-direction: column; gap: 10px;
+        backdrop-filter: blur(14px);
+        overflow-y: auto; min-height: 0;
+        animation: gs-step-in .26s ease both;
+      }
+      @keyframes gs-step-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: none; }
+      }
+      .gs-q-chip {
+        align-self: flex-start;
+        font: 700 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: .05em;
+        color: var(--gold); background: rgba(255,210,120,.1);
+        border: 1px solid rgba(255,210,120,.32); border-radius: 999px;
+        padding: 4px 11px;
       }
       .gs-date-row { display: flex; gap: 8px; }
-      .gs-date-cell { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--muted); }
+      .gs-date-cell { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--gold); }
       .gs-date-cell .gs-input { width: 100%; min-width: 0; text-align: center; }
-      .gs-step-nav { display: flex; gap: 8px; }
+      .gs-step-nav { display: flex; gap: 8px; margin-top: 2px; }
       .gs-back {
         font: 700 14px 'Pretendard Variable', 'Noto Sans KR', sans-serif; padding: 0 16px;
-        border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer;
+        border: 1.5px solid rgba(255,77,157,.22); border-radius: 999px;
+        background: transparent; color: var(--muted); cursor: pointer;
+        transition: border-color .15s ease, color .15s ease;
       }
+      .gs-back:hover { border-color: rgba(255,77,157,.5); color: var(--text); }
       .gs-back:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
       .gs-cta-grow { flex: 1; }
-      .gs-progress { display: flex; gap: 6px; justify-content: center; }
-      .gs-dot { width: 8px; height: 8px; border-radius: 50%; background: #3A2236; }
-      .gs-dot.on { background: var(--pink); box-shadow: 0 0 8px rgba(255,77,157,.7); }
+      .gs-progress { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+      .gs-progress-track {
+        flex: 1; height: 5px; border-radius: 999px; overflow: hidden;
+        background: rgba(255,255,255,.13);
+      }
+      .gs-progress-track i {
+        display: block; height: 100%; border-radius: 999px;
+        background: linear-gradient(90deg, var(--pink), var(--gold));
+        box-shadow: 0 0 8px rgba(255,77,157,.7);
+        transition: width .35s ease;
+      }
+      .gs-progress-num {
+        font: 700 11.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        color: var(--gold); min-width: 26px; text-align: right;
+      }
 
       /* ===== 온페이지 풀이 (웹툰 26컷 — 경계선 없는 연속 스크롤) ===== */
-      .gs-result { --muted: #D9B6C9; display: flex; flex-direction: column; gap: 0; padding: 0 0 110px; }
+      .gs-result { --muted: #D9B6C9; display: flex; flex-direction: column; gap: 0; padding: 0 0 110px; word-break: keep-all; }
 
       /* 웹툰식 고대비 말풍선: 흰 바탕 + 검정 테두리 + 진한 글자 */
       .gs-result .gs-bubble,
       .gs-result .gs-bubble.yui,
       .gs-result .gs-bubble.friend {
-        font-size: 19px; padding: 13px 18px; max-width: 88%;
+        font: 400 17px/1.5 'Jua', 'Pretendard Variable', sans-serif; letter-spacing: 0;
+        padding: 13px 18px; max-width: 88%;
         background: #FFFDF7; border: 2px solid #221019; color: #221019;
         box-shadow: 5px 6px 0 rgba(224,0,122,.3);
       }
@@ -1300,8 +1575,8 @@ function StyleTag() {
         transform: rotate(-10deg);
       }
       /* 이미지 위 임의 배치 */
-      .gs-balloon-tl { position: absolute; z-index: 5; top: 18px; left: 14px; margin: 0; max-width: 70%; padding: 20px 26px; }
-      .gs-balloon-tl p { font-size: 15.5px; }
+      .gs-balloon-tl { position: absolute; z-index: 5; top: 18px; left: 14px; margin: 0; max-width: 86%; padding: 20px 26px; }
+      .gs-balloon-tl p { font-size: 16px; white-space: nowrap; }
       .gs-balloon-tr { position: absolute; z-index: 5; top: 18px; right: 14px; margin: 0; max-width: 72%; padding: 22px 28px; }
       .gs-balloon-br { position: absolute; z-index: 5; right: 14px; bottom: 150px; margin: 0; max-width: 66%; padding: 24px 30px; }
       .gs-balloon-bl { position: absolute; z-index: 5; left: 14px; bottom: 26px; margin: 0; max-width: 74%; padding: 24px 28px; }
@@ -1345,7 +1620,7 @@ function StyleTag() {
         backdrop-filter: blur(8px);
       }
       .gs-wt-quote {
-        margin: 0; font-family: 'Gaegu', cursive; font-size: 24px; line-height: 1.4;
+        margin: 0; font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 21px; line-height: 1.45;
         color: #FFFCF5; text-shadow: 0 2px 14px rgba(0,0,0,.9);
       }
 
@@ -1363,7 +1638,7 @@ function StyleTag() {
           -2px 2px 0 rgba(12,5,10,.9), 2px 2px 0 rgba(12,5,10,.9),
           0 4px 18px rgba(0,0,0,.9);
       }
-      .gs-wt-script { margin: 0; font-family: 'Gaegu', cursive; font-size: 31px; color: #FF8FC2; }
+      .gs-wt-script { margin: 0; font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 26px; color: #FF8FC2; }
       .gs-wt-overlay .gs-wt-script {
         text-shadow:
           -1.5px -1.5px 0 rgba(12,5,10,.85), 1.5px -1.5px 0 rgba(12,5,10,.85),
@@ -1377,7 +1652,7 @@ function StyleTag() {
       .gs-wt-line { margin: 0; font-size: 16.5px; font-weight: 700; line-height: 1.75; color: #FFF3E6; }
       .gs-wt-line b { color: var(--gold); }
       .gs-wt-kicker { margin: 0; font: 700 12.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: .2em; color: var(--gold); }
-      .gs-wt-answer { margin: 0; font-family: 'Gaegu', cursive; font-size: 24px; line-height: 1.5; color: #FFD3E8; }
+      .gs-wt-answer { margin: 0; font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 20px; line-height: 1.55; color: #FFD3E8; }
       .gs-wt-answer b { color: #fff; }
 
       /* 텍스트 컷 — 경계선 없는 풀폭 밴드 (배경색으로만 구분) */
@@ -1393,25 +1668,20 @@ function StyleTag() {
           linear-gradient(160deg, #31112A, #190818);
       }
 
-      /* 블랙 레이스 테두리 — 스캘럽(반원) 띠 + 도트 트림 */
-      .gs-wt-lace { position: relative; padding: 64px 40px; }
-      .gs-wt-lace::before {
-        content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-        --lc: #0A0309;
+      /* 블랙 레이스 테두리 — 사각 프레임 레이스 이미지(투명 배경)를 border-image로
+         가장자리는 밝은 로즈 톤으로 깔아 레이스 실루엣이 드러나게 */
+      .gs-wt-lace {
+        position: relative; padding: 20px 10px;
+        border: 56px solid transparent;
+        border-image: url('${import.meta.env.BASE_URL}assets/garusaju/lace.png') 244 272 264 272 round;
         background:
-          linear-gradient(var(--lc), var(--lc)) top left / 100% 12px no-repeat,
-          linear-gradient(var(--lc), var(--lc)) bottom left / 100% 12px no-repeat,
-          linear-gradient(var(--lc), var(--lc)) top left / 12px 100% no-repeat,
-          linear-gradient(var(--lc), var(--lc)) top right / 12px 100% no-repeat,
-          radial-gradient(circle 10px at 50% 10px, var(--lc) 9px, transparent 10px) top left / 26px 24px repeat-x,
-          radial-gradient(circle 10px at 50% calc(100% - 10px), var(--lc) 9px, transparent 10px) bottom left / 26px 24px repeat-x,
-          radial-gradient(circle 10px at 10px 50%, var(--lc) 9px, transparent 10px) top left / 24px 26px repeat-y,
-          radial-gradient(circle 10px at calc(100% - 10px) 50%, var(--lc) 9px, transparent 10px) top right / 24px 26px repeat-y;
-      }
-      .gs-wt-lace::after {
-        content: ''; position: absolute; inset: 30px; z-index: 0; pointer-events: none;
-        border: 3px dotted rgba(10,3,9,.9); border-radius: 12px;
-        box-shadow: 0 0 0 1px rgba(255,77,157,.22);
+          linear-gradient(90deg, #63365A 0px, rgba(99,54,90,0) 120px),
+          linear-gradient(-90deg, #63365A 0px, rgba(99,54,90,0) 120px),
+          linear-gradient(180deg, #63365A 0px, rgba(99,54,90,0) 120px),
+          linear-gradient(0deg, #63365A 0px, rgba(99,54,90,0) 120px),
+          radial-gradient(circle at 50% 12%, rgba(255,77,157,.16), transparent 60%),
+          linear-gradient(160deg, #2C1127, #1B0A18);
+        background-origin: border-box;
       }
       .gs-wt-lace > * { position: relative; z-index: 1; }
       .gs-wt-warning {
@@ -1431,7 +1701,7 @@ function StyleTag() {
 
       .gs-wt-beep {
         display: inline-flex; align-items: center; gap: 8px;
-        font-family: 'Gaegu', cursive; font-size: 22px; color: var(--ink);
+        font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 18px; color: var(--ink);
         background: var(--gold); border-radius: 999px; padding: 3px 16px;
         box-shadow: 0 0 16px rgba(240,180,80,.5);
       }
@@ -1458,6 +1728,8 @@ function StyleTag() {
         opacity: .32; filter: blur(1.2px);
       }
 
+      .gs-wt-title-sm { font: 800 clamp(19px, 5.2vw, 24px)/1.6 'Pretendard Variable', 'Noto Sans KR', sans-serif; }
+
       .gs-wt-problem-title {
         font: 800 clamp(17px, 4.6vw, 22px)/1.4 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         white-space: nowrap;
@@ -1465,16 +1737,15 @@ function StyleTag() {
       .gs-wt-problem-title .gs-warn { font-style: normal; color: var(--gold); }
 
       .gs-wt-problem {
-        width: 100%; text-align: left; border-radius: 14px;
-        background: rgba(255,77,157,.09); padding: 18px 17px;
+        width: 100%; text-align: center;
         display: flex; flex-direction: column; gap: 10px;
       }
-      .gs-wt-problem strong { font-family: 'Gaegu', cursive; font-size: 24px; color: #FF8FC2; }
+      .gs-wt-problem strong { font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 20px; color: #FF8FC2; }
       .gs-wt-problem p { margin: 0; font-size: 15.5px; line-height: 1.7; color: #FFF3E6; }
       .gs-wt-problem b { color: #FF8FC2; }
       .gs-wt-problem ul { margin: 0; padding-left: 4px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
       .gs-wt-problem li { font: 700 15.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: #FFF3E6; }
-      .gs-wt-chill { margin: 0; font-family: 'Gaegu', cursive; font-size: 21px; line-height: 1.5; color: #FFD3E8; }
+      .gs-wt-chill { margin: 0; font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 18px; line-height: 1.55; color: #FFD3E8; }
       .gs-wt-chill b { color: #fff; }
 
       .gs-wt-actions { display: flex; gap: 8px; width: 100%; }
@@ -1499,7 +1770,6 @@ function StyleTag() {
       }
       .gs-wt-only b { color: var(--gold); }
 
-      .gs-wt-hand { font-size: 52px; line-height: 1; filter: drop-shadow(0 0 14px rgba(255,77,157,.5)); }
       .gs-wt-stupid { margin: 0; font: 400 38px 'yg-jalnan', 'Pretendard Variable', sans-serif; color: var(--pink); text-shadow: 0 0 26px rgba(255,77,157,.7); }
       .gs-wt-stupid small { display: block; font-size: 17px; font-weight: 500; color: var(--muted); margin-top: 2px; }
 
@@ -1514,15 +1784,6 @@ function StyleTag() {
         background: #1C0C18; padding: 40px 20px 44px; gap: 14px;
       }
       .gs-wt-chartdate { margin: -6px 0 2px; font-size: 13.5px; color: var(--muted); }
-      .gs-tengods { display: flex; flex-wrap: wrap; gap: 7px; }
-      .gs-tengod {
-        font: 700 13.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; padding: 5px 12px; border-radius: 999px;
-        color: #8A6376; background: #140710; border: 1px solid var(--line);
-      }
-      .gs-tengod.on {
-        color: #fff; background: linear-gradient(120deg, var(--pink), var(--deep));
-        border-color: var(--pink); box-shadow: 0 0 12px rgba(255,77,157,.55);
-      }
       .gs-wt-fake {
         margin: 2px 0 0; align-self: flex-end; padding: 4px 12px;
         border: 2px solid rgba(255,77,157,.65); border-radius: 8px; transform: rotate(-6deg);
@@ -1540,29 +1801,70 @@ function StyleTag() {
       .gs-wt-center { justify-content: center; }
       .gs-wt-reviews { display: flex; flex-direction: column; gap: 6px; }
       .gs-wt-reviews strong { font-size: 16px; color: var(--gold); }
-      .gs-wt-reviews span { font-family: 'Gaegu', cursive; font-size: 20px; color: #FFFCF5; }
+      .gs-wt-reviews span { font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 17px; color: #FFFCF5; }
       .gs-wt-limit { margin: 0; font-size: 16px; line-height: 1.7; color: #F1DBE7; }
       .gs-wt-limit b { color: #FF6FB0; font-size: 18px; }
       .gs-wt-nudge { margin: 0; font-size: 14px; line-height: 1.7; color: var(--muted); }
       .gs-wt-nudge b { color: var(--gold); }
 
-      /* 명식 */
-      .gs-pillars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
-      .gs-pillar { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 2px; background: #140710; border-radius: 12px; }
-      .gs-pillar-label { font-size: 12.5px; font-weight: 700; color: var(--muted); }
-      .gs-pillar-stem { font: 700 29px 'Pretendard Variable', 'Noto Sans KR', sans-serif; line-height: 1.1; }
-      .gs-pillar-branch { font: 700 24px 'Pretendard Variable', 'Noto Sans KR', sans-serif; line-height: 1.1; }
-      .gs-core { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 16px; background: rgba(240,180,80,.12); border-radius: 12px; }
-      .gs-core span { font-size: 13.5px; font-weight: 700; color: var(--muted); }
-      .gs-core strong { font: 800 17px/1.35 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: var(--gold); text-align: right; }
+      /* 명식 — 만세력 틀 + 갸루 네온 컬러 (글로우 한자 타일 + 운성/신살 줄) */
+      .gs-myeongsik {
+        display: flex; flex-direction: column; align-items: stretch; gap: 0;
+        position: relative; overflow: hidden;
+        padding: 46px 22px 48px;
+        background:
+          radial-gradient(circle at 50% 8%, rgba(255,77,157,.22), transparent 50%),
+          radial-gradient(circle at 12% 60%, rgba(155,112,255,.12), transparent 45%),
+          radial-gradient(circle at 88% 90%, rgba(82,255,216,.1), transparent 45%),
+          #160913;
+      }
+      .gs-myeongsik::before {
+        content: '命'; position: absolute; top: -34px; left: 50%; transform: translateX(-50%);
+        font: 900 300px/1 'Noto Serif KR', serif; color: rgba(255,77,157,.07);
+        pointer-events: none;
+      }
+      .gs-ms-head { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; margin-bottom: 26px; text-align: center; }
+      .gs-ms-kicker { font: 600 12px 'Noto Serif KR', serif; letter-spacing: 7px; text-indent: 7px; color: var(--pink); text-shadow: 0 0 12px rgba(255,77,157,.7); }
+      .gs-ms-title { margin: 0; font: 700 27px/1.4 'Noto Serif KR', serif; letter-spacing: 1px; color: #FFF4F9; text-shadow: 0 0 26px rgba(255,77,157,.65); }
+      .gs-ms-date { margin: 0; font: 600 14.5px 'Noto Serif KR', serif; letter-spacing: 1px; color: #E3A8C6; }
+      .gs-ms-deco { margin-top: 4px; font-size: 12px; letter-spacing: 4px; color: var(--pink); text-shadow: 0 0 10px rgba(255,77,157,.8); }
 
-      /* 오행 밸런스 */
-      .gs-bars { display: flex; flex-direction: column; gap: 10px; }
-      .gs-bar-row { display: grid; grid-template-columns: 64px 1fr 20px; align-items: center; gap: 9px; }
-      .gs-bar-name { font-size: 13.5px; font-weight: 700; }
-      .gs-bar-track { height: 10px; border-radius: 999px; background: #140710; overflow: hidden; }
-      .gs-bar-fill { display: block; height: 100%; border-radius: 999px; transition: width .8s cubic-bezier(.2,.75,.2,1); box-shadow: 0 0 10px currentColor; }
-      .gs-bar-num { font-size: 13.5px; font-weight: 700; color: var(--muted); text-align: right; }
+      .gs-ms-grid { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      .gs-ms-col { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+      .gs-ms-god { font: 700 12.5px 'Pretendard Variable', 'Noto Sans KR', sans-serif; color: #FFD98D; white-space: nowrap; letter-spacing: .03em; text-shadow: 0 0 8px rgba(240,180,80,.4); }
+      .gs-ms-god.me { color: #FF8FC2; text-shadow: 0 0 10px rgba(255,77,157,.7); }
+      .gs-ms-tile {
+        width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+        border-radius: 12px; border: 1px solid;
+        font: 700 clamp(34px, 11vw, 46px) 'Noto Serif KR', serif; color: #1A0613;
+        text-shadow: 0 1px 0 rgba(255,255,255,.35);
+      }
+      .gs-ms-tile.el-wood  { background: linear-gradient(150deg, #8CFFE6, #17C29B 85%); border-color: #52FFD8; box-shadow: 0 0 16px rgba(82,255,216,.4), inset 0 0 14px rgba(255,255,255,.18); }
+      .gs-ms-tile.el-fire  { background: linear-gradient(150deg, #FF7CB8, #E0007A 85%); border-color: #FF4D9D; box-shadow: 0 0 16px rgba(255,77,157,.55), inset 0 0 14px rgba(255,255,255,.18); }
+      .gs-ms-tile.el-earth { background: linear-gradient(150deg, #FFECB0, #E0A93E 85%); border-color: #F0B450; box-shadow: 0 0 16px rgba(240,180,80,.45), inset 0 0 14px rgba(255,255,255,.2); }
+      .gs-ms-tile.el-metal { background: linear-gradient(150deg, #FFFFFF, #AEBBD0 85%); border-color: #DCE7F5; box-shadow: 0 0 16px rgba(220,231,245,.4), inset 0 0 14px rgba(255,255,255,.25); }
+      .gs-ms-tile.el-water { background: linear-gradient(150deg, #C9AEFF, #7B3FF2 85%); border-color: #9B70FF; box-shadow: 0 0 16px rgba(155,112,255,.5), inset 0 0 14px rgba(255,255,255,.16); }
+      .gs-ms-tile.el-none  { background: linear-gradient(150deg, #321F2D, #150A12 85%); border-color: #4A2A45; color: #8A6376; text-shadow: none; }
+
+      .gs-ms-rows { margin-top: 20px; border-top: 1px solid rgba(255,77,157,.32); }
+      .gs-ms-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 13px 0; border-bottom: 1px solid rgba(255,77,157,.32); }
+      .gs-ms-row span { min-width: 0; text-align: center; font: 600 15px 'Noto Serif KR', serif; letter-spacing: 1px; color: #FFE9C9; text-shadow: 0 0 10px rgba(240,180,80,.35); }
+      .gs-ms-row.gs-ms-sal span { color: #FF9DC8; text-shadow: 0 0 10px rgba(255,77,157,.5); }
+      .gs-ms-guide { margin: 10px 0 0; text-align: center; font-family: 'Jua', 'Pretendard Variable', sans-serif; font-size: 14px; color: #E3A8C6; }
+      .gs-ms-core { margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+      .gs-ms-core span { font: 700 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: 4px; text-indent: 4px; color: #E3A8C6; }
+      .gs-ms-core strong { font: 700 19px 'Noto Serif KR', serif; letter-spacing: .5px; color: var(--gold); text-shadow: 0 0 18px rgba(240,180,80,.6); }
+
+      .gs-ms-salcards { margin-top: 26px; display: flex; flex-direction: column; gap: 9px; }
+      .gs-ms-sallabel { margin: 0 0 3px; text-align: center; font: 600 13px 'Noto Serif KR', serif; letter-spacing: 5px; text-indent: 5px; color: var(--pink); text-shadow: 0 0 12px rgba(255,77,157,.7); }
+      .gs-ms-salcard {
+        display: flex; flex-direction: column; gap: 4px; padding: 13px 16px;
+        border: 1px solid rgba(255,77,157,.45); border-radius: 14px;
+        background: rgba(255,77,157,.1);
+        box-shadow: 0 0 14px rgba(224,0,122,.18);
+      }
+      .gs-ms-salcard b { font: 700 15.5px 'Noto Serif KR', serif; letter-spacing: 1px; color: #FF9DC8; text-shadow: 0 0 10px rgba(255,77,157,.5); }
+      .gs-ms-salcard p { margin: 0; font-size: 14px; line-height: 1.6; color: #F1DBE7; }
 
       /* 키-밸류 */
       .gs-kv { display: flex; flex-direction: column; gap: 4px; padding: 13px 15px; background: rgba(255,77,157,.08); border-radius: 12px; }
@@ -1671,6 +1973,7 @@ function StyleTag() {
         .gs-sub { font-size: 12px; }
         .gs-chat { max-height: calc(100dvh - 150px); }
         .gs-bubble { font-size: 15px; padding: 7px 11px; }
+        .gs-chat-avatar { width: 38px; height: 38px; }
         .gs-step-panel { padding: 10px; gap: 7px; }
         .gs-input { padding-block: 10px; }
         .gs-cta { padding-block: 12px; font-size: 15px; }
@@ -1688,7 +1991,7 @@ function StyleTag() {
           max-height: none;
           justify-content: flex-end;
         }
-        .gs-bubble { display: none; }
+        .gs-chat-msg { display: none; }
         .gs-agree { font-size: 10px; }
         .gs-hint { font-size: 10px; }
       }
