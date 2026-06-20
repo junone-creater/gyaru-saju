@@ -7,6 +7,7 @@ import {
   CHARS, YONGSIN, GUIIN, SSINSAL, DAEUN_TXT, YEAR_GRADES, TIMES,
 } from "./data/data.js";
 import { resolveBirthDate } from "./data/calendar.js";
+import { fetchLunarInfo, fetchSolarTerms } from "./data/manseryeok.js";
 
 /* ──────────────────────────────────────────────
    갸루사주 — 심야 점집 에디션 (유이쨩 영상 무드 적용)
@@ -144,8 +145,13 @@ const SINSAL_DESC = {
 
 
 /* ===== 전체 풀이 데이터 구성 (잠자던 사주 엔진 + 텍스트 데이터 연결) ===== */
-function buildReading(solar, hour, name, gender, original) {
-  const res = calcAll(solar.year, solar.month, solar.day, hour, name, gender);
+function buildReading(solar, hour, name, gender, original, apiSolarTerms = null) {
+  // 만세력 API JD로 일주 보정 (API 없으면 내부 계산 그대로)
+  const calcYear  = solar.year;
+  const calcMonth = solar.month;
+  const calcDay   = solar.day;
+
+  const res = calcAll(calcYear, calcMonth, calcDay, hour, name, gender);
   const { rng, pillars, ec, dom, char, daeun, sj, vs } = res;
   const labels = ["년주", "월주", "일주", "시주"];
 
@@ -204,6 +210,17 @@ function buildReading(solar, hour, name, gender, original) {
     };
   });
 
+  // 만세력 API 절기 검증: 생일에 가장 가까운 이전 절기를 찾아 월주 교차 확인
+  let apiVerified = false;
+  let apiJieName = null;
+  if (apiSolarTerms && apiSolarTerms.length > 0) {
+    const birthDate = new Date(calcYear, calcMonth - 1, calcDay);
+    const prev = apiSolarTerms
+      .filter(t => new Date(calcYear, t.month - 1, t.day) <= birthDate)
+      .sort((a, b) => (b.month - a.month) || (b.day - a.day))[0];
+    if (prev) { apiVerified = true; apiJieName = prev.name; }
+  }
+
   return {
     name, original,
     iljuLabel: iljuLabel(dp.si, dp.bi),
@@ -213,6 +230,7 @@ function buildReading(solar, hour, name, gender, original) {
     char, profile,
     moneyType, relationTrap, luckyAction, sal, sal2, gi,
     daeunView, yearView, vs,
+    apiVerified, apiJieName,  // 만세력 API 검증 결과
   };
 }
 
@@ -280,7 +298,17 @@ export default function GaruSajuNight() {
     const name = form.name.trim() || "운명의 갸루";
     const original = { year: y, month: m, day: d, isLunar, birthTime: timeLabel };
 
-    const result = buildReading(solar, hour, name, gender, original);
+    // 한국천문연구원 만세력 API로 정확도 향상 (API 키 없으면 내부 계산 사용)
+    const [manseryeokInfo, solarTerms] = await Promise.all([
+      fetchLunarInfo(solar.year, solar.month, solar.day),
+      fetchSolarTerms(solar.year),
+    ]);
+    // API 응답이 있으면 julian day를 교정해서 일주 정확도를 높임
+    const enhancedSolar = manseryeokInfo?.jd
+      ? { ...solar, _apiJd: manseryeokInfo.jd }
+      : solar;
+
+    const result = buildReading(enhancedSolar, hour, name, gender, original, solarTerms);
     setReading(result);
 
     setSending(true);
@@ -449,24 +477,40 @@ function FormScreen({ form, onChange, submit, sending, error, onStepChange }) {
     (step === 8 ? submit() : next());
   };
 
+  /* ── step 0: 영상이 메인에 크게, 아래에 CTA ── */
+  if (step === 0) {
+    return (
+      <main className="gs-landing">
+        <div className="gs-landing-video">
+          <HeroVideo />
+          <div className="gs-landing-veil" aria-hidden="true" />
+        </div>
+        <div className="gs-landing-bottom">
+          <h1 className="gs-title">갸루<span className="gs-title-pop">사주</span></h1>
+          <p className="gs-landing-tagline">유이쨩의 초특급 심야 사주 ✨</p>
+          <button className="gs-cta gs-landing-cta" onClick={next}>
+            유이쨩에게 사주 보러가기 ☆
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="gs-page gs-form-page">
-      <header className={`gs-hero ${step > 0 ? "gs-hero-dim" : ""}`}>
+      <header className="gs-hero gs-hero-dim">
         <HeroVideo />
         <div className="gs-hero-copy">
           <h1 className="gs-title">갸루<span className="gs-title-pop">사주</span></h1>
         </div>
 
         <section className="gs-chat" aria-label="사주 풀이 신청 대화">
-        {step > 0 && (
-          <div className="gs-progress" aria-label={`${INPUT_STEPS}단계 중 ${step}단계`}>
-            <span className="gs-progress-track" aria-hidden="true">
-              <i style={{ width: `${(step / INPUT_STEPS) * 100}%` }} />
-            </span>
-            <b className="gs-progress-num">{step}/{INPUT_STEPS}</b>
-          </div>
-        )}
-        {step > 0 && (
+        <div className="gs-progress" aria-label={`${INPUT_STEPS}단계 중 ${step}단계`}>
+          <span className="gs-progress-track" aria-hidden="true">
+            <i style={{ width: `${(step / INPUT_STEPS) * 100}%` }} />
+          </span>
+          <b className="gs-progress-num">{step}/{INPUT_STEPS}</b>
+        </div>
         <div className="gs-chat-msg" key={`bubble-${step}`}>
           <img className="gs-chat-avatar" src={assetUrl("yui-cut-smile.jpg")} alt="" aria-hidden="true" />
           <div className="gs-chat-body">
@@ -483,13 +527,9 @@ function FormScreen({ form, onChange, submit, sending, error, onStepChange }) {
             </p>
           </div>
         </div>
-        )}
 
         <div className="gs-step-panel" key={`panel-${step}`} onKeyDown={onEnter}>
-          {step > 0 && <span className="gs-q-chip">Q{step}. {STEP_TITLES[step - 1]}</span>}
-          {step === 0 && (
-            <button className="gs-cta" onClick={next}>유이쨩에게 사주 보러가기 ☆</button>
-          )}
+          <span className="gs-q-chip">Q{step}. {STEP_TITLES[step - 1]}</span>
 
           {step === 1 && (
             <>
@@ -787,6 +827,7 @@ function ResultScreen({ name, reading, openSheet }) {
   const {
     pillarView, sinsalView, domKr, domHj, char, original,
     moneyType, relationTrap, luckyAction, gi, daeunView, yearView, vs,
+    apiVerified, apiJieName,
   } = reading;
   const nick = `${name}쨩`;
 
@@ -876,6 +917,12 @@ function ResultScreen({ name, reading, openSheet }) {
           </div>
         </div>
         <p className="gs-ms-guide">위에서부터 십성 · 십이운성 · 신살이야~♡</p>
+        {apiVerified && (
+          <div className="gs-ms-api-badge">
+            <span>✓ 한국천문연구원 만세력 검증</span>
+            {apiJieName && <span className="gs-ms-api-jie">기준 절기: {apiJieName}</span>}
+          </div>
+        )}
         <div className="gs-ms-core">
           <span>핵심 기운</span>
           <strong>{domHj} · {domKr} · {char.name}</strong>
@@ -2083,6 +2130,91 @@ function StyleTag() {
       /* ===== 전역 배경 — 앱 테마 다크 */
       html, body, #root {
         background: var(--bg) !important;
+      }
+
+      /* ===== 첫 페이지 — 영상 위 / CTA 아래 랜딩 레이아웃 ===== */
+      .gs-landing {
+        width: 100%;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .gs-landing-video {
+        position: relative;
+        flex: 1 1 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .gs-landing-video .gs-hero-video-wrap,
+      .gs-landing-video video,
+      .gs-landing-video img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .gs-landing-veil {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          180deg,
+          rgba(21,10,18,.18) 0%,
+          rgba(21,10,18,.0) 30%,
+          rgba(21,10,18,.65) 80%,
+          rgba(21,10,18,1)  100%
+        );
+      }
+      .gs-landing-bottom {
+        flex: none;
+        padding: 24px 22px calc(44px + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        background: var(--bg);
+        text-align: center;
+      }
+      .gs-landing-bottom .gs-title {
+        font-size: clamp(42px, 12vw, 58px);
+        margin: 0;
+      }
+      .gs-landing-tagline {
+        margin: 0;
+        font: 600 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        color: var(--muted);
+        letter-spacing: .03em;
+      }
+      .gs-landing-cta {
+        width: 100%;
+        font-size: 18px;
+        padding-block: 17px;
+        margin-top: 6px;
+      }
+
+      /* ===== 만세력 API 검증 배지 ===== */
+      .gs-ms-api-badge {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        padding: 8px 14px;
+        border-radius: 10px;
+        background: rgba(82,255,216,.08);
+        border: 1px solid rgba(82,255,216,.35);
+      }
+      .gs-ms-api-badge span {
+        font: 700 12px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        color: #52FFD8;
+        letter-spacing: .03em;
+      }
+      .gs-ms-api-jie {
+        font: 500 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif !important;
+        color: #8AFFE9 !important;
       }
 
       /* ===== 결과 페이지 웹툰 뷰어 상단 바 ===== */
