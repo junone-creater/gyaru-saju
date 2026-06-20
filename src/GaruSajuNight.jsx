@@ -2117,14 +2117,20 @@ function StyleTag() {
         .gs-hero-glow { animation: none; }
       }
 
+      /* ===== 전역 배경 덮어쓰기 (common.css 밝은 배경 제거) ===== */
+      html, body, #root {
+        background: #111 !important;
+      }
+
       /* ===== 웹툰 뷰어 인트로 — 네이버 웹툰 스타일 ===== */
       .gs-viewer {
-        width: 100%;
+        width: 100vw;
         min-height: 100dvh;
         background: #111;
         display: flex;
         flex-direction: column;
         align-items: center;
+        overflow-x: hidden;
       }
       .gs-viewer-bar {
         position: sticky;
@@ -2150,15 +2156,19 @@ function StyleTag() {
         max-width: 690px;
         display: flex;
         flex-direction: column;
+        font-size: 0;
         line-height: 0;
+        gap: 0;
       }
       .gs-viewer-img {
         width: 100%;
+        height: auto;
         display: block;
         margin: 0;
         padding: 0;
         border: none;
-        vertical-align: top;
+        vertical-align: bottom;
+        line-height: 0;
       }
       .gs-viewer-bottom {
         width: 100%;
@@ -2174,7 +2184,7 @@ function StyleTag() {
         margin: 0;
         text-align: center;
         font-size: 13px;
-        color: #666;
+        color: #555;
         letter-spacing: .02em;
       }
       .gs-viewer-bottom .gs-cta {
