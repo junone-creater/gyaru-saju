@@ -144,6 +144,14 @@ const SINSAL_DESC = {
 };
 
 
+const EL_DESC = {
+  wood:  '성장·도전의 에너지 🌱 새로운 걸 시작하고 뻗어나가는 힘이 강해. 창의적이고 앞으로 나아가는 걸 좋아하지.',
+  fire:  '열정·표현의 에너지 🔥 밝고 빠르게 타오르는 아이디어와 행동력이 넘쳐. 사람을 끌어당기는 에너지가 있어.',
+  earth: '안정·포용의 에너지 🏔 묵직하게 쌓아가는 힘이 있어. 한 번 믿으면 끝까지 가는 타입이고 현실 감각이 뛰어나.',
+  metal: '결단·완성의 에너지 ✨ 날카로운 판단력과 완벽함을 향한 집착. 한 번 정하면 끝장을 보는 스타일이야.',
+  water: '지혜·감성의 에너지 🌊 깊은 통찰력과 흐르듯 적응하는 유연함. 속 깊고 공감 능력이 뛰어나.',
+};
+
 /* ===== 전체 풀이 데이터 구성 (잠자던 사주 엔진 + 텍스트 데이터 연결) ===== */
 function buildReading(solar, hour, name, gender, original, apiSolarTerms = null) {
   // 만세력 API JD로 일주 보정 (API 없으면 내부 계산 그대로)
@@ -226,11 +234,11 @@ function buildReading(solar, hour, name, gender, original, apiSolarTerms = null)
     iljuLabel: iljuLabel(dp.si, dp.bi),
     animal: BRANCH_ANIMAL[dp.bi],
     pillarView, sinsalView, elBars,
-    domKr: EL_KR[dom], domHj: EL_HJ[dom],
+    domKr: EL_KR[dom], domHj: EL_HJ[dom], domEl: dom,
     char, profile,
     moneyType, relationTrap, luckyAction, sal, sal2, gi,
     daeunView, yearView, vs,
-    apiVerified, apiJieName,  // 만세력 API 검증 결과
+    apiVerified, apiJieName,
   };
 }
 
@@ -448,7 +456,7 @@ function FormScreen({ form, onChange, submit, sending, error, onStepChange }) {
         return setStepError("생년월일을 다시 확인해 주세요. (음력은 평달 기준)");
       setStep(3);
     } else if (step === 3) {
-      if (!timeOk) return setStepError("시간을 고르거나 ‘시간 몰라요’를 눌러줘.");
+      if (!timeOk) return setStepError("시간을 고르거나 '시간 몰라요'를 눌러줘.");
       setStep(4);
     } else if (step === 4) {
       if (!form.gender) return setStepError("대운 방향을 위해 성별을 골라줘!");
@@ -819,9 +827,9 @@ const Balloon = ({ tail = "l", pos = "", children }) => (
 function ResultScreen({ name, reading, openSheet }) {
   if (!reading) return null;
   const {
-    pillarView, sinsalView, domKr, domHj, char, original,
+    pillarView, sinsalView, domKr, domHj, domEl, char, original,
     moneyType, relationTrap, luckyAction, gi, daeunView, yearView, vs,
-    apiVerified, apiJieName,
+    apiVerified, apiJieName, iljuLabel: iljuStr,
   } = reading;
   const nick = `${name}쨩`;
 
@@ -867,21 +875,22 @@ function ResultScreen({ name, reading, openSheet }) {
         </CutPhoto>
       </Cut>
 
-      {/* 5컷 — 37번 확인 */}
+      {/* 5컷 — 일주 기반 캐릭터 풀이 */}
       <Cut num={5} className="gs-wt-text-cut gs-wt-lace gs-wt-lace-join">
-        <h2 className="gs-wt-title">결정 다 해놓고<br /><em>마지막 확인만 37번</em><br />하는 거 맞지~?<i className="gs-emo">(¬‿¬)♡</i></h2>
+        <p className="gs-wt-eyebrow">✨ {nick}의 일주(日柱) — {iljuStr} ✨</p>
+        <h2 className="gs-wt-title"><em>{char.name}</em></h2>
+        <p className="gs-char-intro">{char.intro}</p>
         <div className="gs-wt-checks">
-          <p>좋아하는 것도 오래 고민하고☆</p>
-          <p>사는 것도 오래 고민하고☆</p>
-          <p>떠나는 것도 오래 고민해☆</p>
+          {char.traits.slice(0, 3).map((t, i) => <p key={i}>{t}</p>)}
         </div>
-        <p className="gs-wt-punch">근데 웃긴 건~ 그렇게 고민하다 타이밍 놓치고<br /><b>“에이~ 원래 내 거 아니었나 보네♡”</b><br />하고 넘겨버리잖아~<i className="gs-emo">(&gt;_&lt;)💦</i></p>
+        <p className="gs-wt-punch">이거 읽으면서 <b>찔리는 부분 있지~?</b><br />팔자에 다 써있거든~<i className="gs-emo">(¬‿¬)♡</i></p>
       </Cut>
 
-      {/* 6컷 — 팔자 때문 */}
+      {/* 6컷 — 오행 기반 핵심 에너지 */}
       <Cut num={6} className="gs-wt-text-cut gs-wt-impact">
-        <h2 className="gs-wt-title">{nick}이 지금<br />이게 고민되는 이유☆</h2>
-        <p className="gs-wt-answer">유이쨩은 알지~♡<br /><b>바로 니 팔자 때문이야</b> <i className="gs-emo">(¬‿¬)✨</i></p>
+        <h2 className="gs-wt-title">{nick}의 핵심 에너지<br /><em>{domHj} · {domKr}</em></h2>
+        <p className="gs-wt-answer">{EL_DESC[domEl]}</p>
+        <p className="gs-wt-punch">이게 {nick} 팔자의 <b>가장 큰 힘</b>이자<br /><b>가장 조심해야 할 부분</b>이야~<i className="gs-emo">(¬‿¬)✨</i></p>
       </Cut>
 
       {/* 7컷 — 사주 명식 (전통 만세력 스타일 + 십이운성/신살) */}
@@ -913,10 +922,35 @@ function ResultScreen({ name, reading, openSheet }) {
         <p className="gs-ms-guide">위에서부터 십성 · 십이운성 · 신살이야~♡</p>
         {apiVerified && (
           <div className="gs-ms-api-badge">
-            <span>✓ 한국천문연구원 만세력 검증</span>
+            <span>✓ lunisolar 만세력 검증</span>
             {apiJieName && <span className="gs-ms-api-jie">기준 절기: {apiJieName}</span>}
           </div>
         )}
+        <div className="gs-term-box">
+          <p className="gs-term-title">🔍 용어 풀이 — 내 사주 읽는 법</p>
+          <div className="gs-term-list">
+            <div className="gs-term-item">
+              <b>일주(日柱)</b>
+              <span>태어난 날의 기운 = 진짜 내 본모습. 4개 기둥 중 가장 중요해~</span>
+            </div>
+            <div className="gs-term-item">
+              <b>오행(五行) — {domKr}</b>
+              <span>목·화·토·금·수 중 내 기운의 방향. {nick}은 {domKr} 기운이 제일 강해</span>
+            </div>
+            <div className="gs-term-item">
+              <b>십성(十星)</b>
+              <span>천간끼리의 관계 = 돈·관계·권력이 나에게 어떤 방식으로 오는지</span>
+            </div>
+            <div className="gs-term-item">
+              <b>십이운성(十二運星)</b>
+              <span>기운의 생명주기 = 각 기둥이 얼마나 강하고 약한지</span>
+            </div>
+            <div className="gs-term-item">
+              <b>신살(神殺)</b>
+              <span>타고난 특별한 기운 = 재능이기도 하고 조심해야 할 점이기도 해</span>
+            </div>
+          </div>
+        </div>
         <div className="gs-ms-core">
           <span>핵심 기운</span>
           <strong>{domHj} · {domKr} · {char.name}</strong>
@@ -962,18 +996,17 @@ function ResultScreen({ name, reading, openSheet }) {
         <h2 className="gs-wt-title">좋은 말만은<br /><em>안 한다~?</em> <i className="gs-emo">(¬‿¬)♡</i></h2>
       </Cut>
 
-      {/* 13컷 — 반복될 문제 */}
+      {/* 13컷 — 반복될 패턴 (char 기반) */}
       <Cut num={13} className="gs-wt-text-cut gs-wt-impact gs-wt-lace">
-        <h2 className="gs-wt-title gs-wt-problem-title"><i className="gs-warn">⚠︎</i> 니 인생에서 <em>반복될 수 있는 문제</em> <i className="gs-warn">⚠︎</i></h2>
+        <h2 className="gs-wt-title gs-wt-problem-title"><i className="gs-warn">⚠︎</i> {nick}의 <em>반복되는 패턴</em> <i className="gs-warn">⚠︎</i></h2>
         <div className="gs-wt-problem">
-          <strong>“알아서 알아주겠지~”</strong>
-          <p>이 생각 때문에 손해 본 적 있지~?<i className="gs-emo">(¬‿¬)♡</i></p>
-          <ul>
-            <li>고맙다는 말도 못 하고☆</li>
-            <li>섭섭하다는 말도 못 하고☆</li>
-            <li>좋아한다는 말도 못 하고☆</li>
-          </ul>
-          <p>참을 만큼 참다가 어느 날 갑자기<br /><b>“나 이제 못 하겠어”</b><br />하고 사라지는 패턴<i className="gs-emo">(&gt;_&lt;)💦</i></p>
+          <strong>{char.name}</strong>
+          <p>{char.traits[3]}<i className="gs-emo">(¬‿¬)♡</i></p>
+          <p>{char.traits[4]}</p>
+          <div className="gs-term-pill-row">
+            {char.job.slice(0, 2).map(j => <span key={j} className="gs-chip">{j}</span>)}
+            <span className="gs-chip-muted">이 방향이 잘 맞아</span>
+          </div>
         </div>
         <p className="gs-wt-chill">근데 더 소름 돋는 건~<br /><b>이게 한 번이 아니라는 거야♡</b></p>
       </Cut>
@@ -988,15 +1021,16 @@ function ResultScreen({ name, reading, openSheet }) {
         </CutPhoto>
       </Cut>
 
-      {/* 15컷 — 조언 */}
+      {/* 15컷 — char 기반 실질 조언 */}
       <Cut num={15} className="gs-wt-text-cut gs-wt-impact gs-wt-lace gs-wt-lace-join">
-        <h2 className="gs-wt-title">니 문제는<br /><em>능력 부족이 아니야~☆</em></h2>
+        <h2 className="gs-wt-title">{nick}의 팔자를<br /><em>제대로 쓰는 법~☆</em></h2>
         <div className="gs-wt-problem">
-          <p>생각보다 너무 오래 참는 거야</p>
-          <p>확인만 하지 말고 <b>표현도 하고☆</b><br />기다리지만 말고 <b>움직여봐☆</b></p>
-          <p>니 팔자는 생각만 할 때보다<br /><b>움직이는 순간 훨씬 크게 열리거든</b></p>
-          <strong>“알아서 알겠지” 그거 버려~♡</strong>
-          <p>말해야 알더라구~?</p>
+          <p><b>연애 스타일:</b> {char.couple}</p>
+          <p>약해지는 순간 <b>{char.weak}</b> 신호를 주면 꼭 쉬어가~</p>
+          <div className="gs-term-pill-row">
+            {char.job.map(j => <span key={j} className="gs-chip">{j}</span>)}
+          </div>
+          <p>이 방향에서 움직이기 시작할 때<br /><b>{char.name}의 팔자가 열려</b>~♡</p>
         </div>
       </Cut>
 
@@ -1040,6 +1074,22 @@ function ResultScreen({ name, reading, openSheet }) {
           <span className="gs-kv-key">귀인 타입 · {gi.t}</span>
           <p className="gs-kv-val"><PartialBlur text={gi.d} /></p>
         </div>
+      </Cut>
+
+      {/* 중간 유도 컷 */}
+      <Cut num="22.5" className="gs-wt-text-cut gs-wt-mid-cta">
+        <p className="gs-wt-eyebrow">✦ 지금까지 본 게 다가 아니야~ ✦</p>
+        <h2 className="gs-wt-title">이건 사주 전체의<br /><em>맛보기야♡</em></h2>
+        <p className="gs-mid-cta-sub">1:1 심층 풀이에선 이것도 다 알 수 있어~</p>
+        <ul className="gs-mid-cta-list">
+          <li>✦ 올해 연애 타이밍 (월 단위)</li>
+          <li>✦ 재물운이 열리는 진짜 방향</li>
+          <li>✦ 나한테 맞는 귀인 유형</li>
+          <li>✦ 피해야 할 인연 패턴</li>
+          <li>✦ 지금 당장 해야 할 행동 1가지</li>
+        </ul>
+        <button className="gs-cta gs-mid-cta-btn" onClick={openSheet}>지금 1:1 심층 풀이 신청하기 →</button>
+        <p className="gs-mid-cta-nudge">아래도 계속 읽고 싶으면 내려봐~♡</p>
       </Cut>
 
       {/* 23컷 — 인간관계 · 호구 패턴 (실데이터) */}
@@ -1109,8 +1159,8 @@ function ResultScreen({ name, reading, openSheet }) {
           <p className="gs-wt-line">전부 1:1로 분석해줘<i className="gs-emo">(°▽°)✨</i></p>
           <div className="gs-wt-reviews">
             <strong>해본 사람들? 다 소름 돋았다더라~ <i className="gs-emo">Σ(°△°)💦</i></strong>
-            <span>“내 얘기 그대로야”</span>
-            <span>“왜 진작 안 했지?”</span>
+            <span>"내 얘기 그대로야"</span>
+            <span>"왜 진작 안 했지?"</span>
           </div>
           <p className="gs-wt-limit">근데 아무나 못 해☆<br /><b>딱 15명만 가능하거든~<i className="gs-emo">(&gt;_&lt;)✋</i></b></p>
           <p className="gs-wt-line">읽으면서 찔렸잖아~?<br /><b>그게 지금 너한테 가장 필요한 거야♡</b></p>
@@ -1973,6 +2023,26 @@ function StyleTag() {
       .gs-ms-core { margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
       .gs-ms-core span { font: 700 11px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: 4px; text-indent: 4px; color: #E3A8C6; }
       .gs-ms-core strong { font: 700 19px 'Pretendard Variable', 'Noto Sans KR', sans-serif; letter-spacing: .5px; color: var(--gold); text-shadow: 0 0 18px rgba(240,180,80,.6); }
+
+      /* 용어 풀이 박스 */
+      .gs-term-box { margin-top: 20px; padding: 16px; border-radius: 14px; border: 1px solid rgba(82,255,216,.25); background: rgba(82,255,216,.06); }
+      .gs-term-title { margin: 0 0 12px; font: 700 13px 'Pretendard Variable','Noto Sans KR',sans-serif; letter-spacing:.05em; color: #52FFD8; text-align: center; }
+      .gs-term-list { display: flex; flex-direction: column; gap: 10px; }
+      .gs-term-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.04); }
+      .gs-term-item b { font: 700 13px 'Pretendard Variable','Noto Sans KR',sans-serif; color: #FFE9C9; }
+      .gs-term-item span { font: 400 13px 'Pretendard Variable','Noto Sans KR',sans-serif; line-height: 1.6; color: #C9B8D0; }
+      /* 캐릭터 소개 */
+      .gs-char-intro { margin: 8px 0 14px; font: 500 15px 'Pretendard Variable','Noto Sans KR',sans-serif; line-height: 1.7; color: #E3C8D8; text-align: center; }
+      /* 칩 행 */
+      .gs-term-pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; align-items: center; }
+      .gs-chip-muted { font: 400 12px 'Pretendard Variable','Noto Sans KR',sans-serif; color: #9B7FAD; padding: 4px 10px; }
+      /* 중간 유도 컷 */
+      .gs-wt-mid-cta { border: 1px solid rgba(255,77,157,.4); background: rgba(255,77,157,.07); border-radius: 18px; padding: 26px 20px; }
+      .gs-mid-cta-sub { margin: 6px 0 16px; font: 400 14px 'Pretendard Variable','Noto Sans KR',sans-serif; color: #C9B8D0; text-align: center; }
+      .gs-mid-cta-list { list-style: none; padding: 0; margin: 0 0 20px; display: flex; flex-direction: column; gap: 9px; }
+      .gs-mid-cta-list li { font: 500 14px 'Pretendard Variable','Noto Sans KR',sans-serif; color: #FFE9C9; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,.05); }
+      .gs-mid-cta-btn { width: 100%; font-size: 16px; padding-block: 15px; }
+      .gs-mid-cta-nudge { margin: 12px 0 0; font: 400 13px 'Pretendard Variable','Noto Sans KR',sans-serif; color: #9B7FAD; text-align: center; }
 
       .gs-ms-salcards { margin-top: 26px; display: flex; flex-direction: column; gap: 9px; }
       .gs-ms-sallabel { margin: 0 0 3px; text-align: center; font: 400 15px 'yg-jalnan', 'Pretendard Variable', sans-serif; letter-spacing: 5px; text-indent: 5px; color: var(--pink); text-shadow: 0 0 12px rgba(255,77,157,.7); }
