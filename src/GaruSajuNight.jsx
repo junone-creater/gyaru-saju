@@ -7,7 +7,7 @@ import {
   CHARS, YONGSIN, GUIIN, SSINSAL, DAEUN_TXT, YEAR_GRADES, TIMES,
 } from "./data/data.js";
 import { resolveBirthDate } from "./data/calendar.js";
-import { fetchLunarInfo, fetchSolarTerms } from "./data/manseryeok.js";
+import { getLunarInfo, getSolarTerms } from "./data/manseryeok.js";
 
 /* ──────────────────────────────────────────────
    갸루사주 — 심야 점집 에디션 (유이쨩 영상 무드 적용)
@@ -298,17 +298,11 @@ export default function GaruSajuNight() {
     const name = form.name.trim() || "운명의 갸루";
     const original = { year: y, month: m, day: d, isLunar, birthTime: timeLabel };
 
-    // 한국천문연구원 만세력 API로 정확도 향상 (API 키 없으면 내부 계산 사용)
-    const [manseryeokInfo, solarTerms] = await Promise.all([
-      fetchLunarInfo(solar.year, solar.month, solar.day),
-      fetchSolarTerms(solar.year),
-    ]);
-    // API 응답이 있으면 julian day를 교정해서 일주 정확도를 높임
-    const enhancedSolar = manseryeokInfo?.jd
-      ? { ...solar, _apiJd: manseryeokInfo.jd }
-      : solar;
+    // lunisolar 패키지로 절기 데이터 취득 (API 키 불필요, 동기 실행)
+    const lunarInfo  = getLunarInfo(solar.year, solar.month, solar.day);
+    const solarTerms = getSolarTerms(solar.year);
 
-    const result = buildReading(enhancedSolar, hour, name, gender, original, solarTerms);
+    const result = buildReading(solar, hour, name, gender, original, solarTerms);
     setReading(result);
 
     setSending(true);
