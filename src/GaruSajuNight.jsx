@@ -389,48 +389,6 @@ function HeroVideo() {
   );
 }
 
-/* ===== 웹툰 뷰어 인트로 — 네이버 웹툰 스타일 세로 스크롤 ===== */
-const LANDING_IMAGES = [
-  landingUrl("Page_01.jpeg"),
-  landingUrl("Page_02.jpeg"),
-  landingUrl("Page_02_2.jpeg"),
-  landingUrl("Page_03.jpeg"),
-  landingUrl("Page_04.jpeg"),
-  landingUrl("Page_07.jpeg"),
-  landingUrl("Page_08.jpeg"),
-  landingUrl("Page_10.jpeg"),
-  landingUrl("Page_14.jpeg"),
-  landingUrl("Page_17.jpeg"),
-  landingUrl("Page_18.jpeg"),
-];
-
-function WebtoonIntro({ onStart }) {
-  return (
-    <div className="gs-viewer">
-      <header className="gs-viewer-bar">
-        <span className="gs-viewer-title">갸루사주 · 심야 점집</span>
-      </header>
-      <div className="gs-viewer-strip">
-        {LANDING_IMAGES.map((src, i) => (
-          <img
-            key={i}
-            className="gs-viewer-img"
-            src={src}
-            alt=""
-            loading={i < 2 ? "eager" : "lazy"}
-          />
-        ))}
-      </div>
-      <div className="gs-viewer-bottom">
-        <p className="gs-viewer-hint">✦ 스크롤을 내려서 미리보기를 봤다면 ✦</p>
-        <button className="gs-cta" onClick={onStart}>
-          유이쨩에게 사주 보러가기 ☆
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /* ===== 1단계: 대화형 입력 폼 — 질문 하나당 한 단계씩
    (인트로 → ①이름 → ②생일 → ③시간 → ④성별 → ⑤연애 상태 → ⑥기간 → ⑦직업 → ⑧이메일) ===== */
 const INPUT_STEPS = 8; // 인트로 제외 입력 단계 수
@@ -491,11 +449,9 @@ function FormScreen({ form, onChange, submit, sending, error, onStepChange }) {
     (step === 8 ? submit() : next());
   };
 
-  if (step === 0) return <WebtoonIntro onStart={() => setStep(1)} />;
-
   return (
     <main className="gs-page gs-form-page">
-      <header className="gs-hero gs-hero-dim">
+      <header className={`gs-hero ${step > 0 ? "gs-hero-dim" : ""}`}>
         <HeroVideo />
         <div className="gs-hero-copy">
           <h1 className="gs-title">갸루<span className="gs-title-pop">사주</span></h1>
@@ -835,7 +791,13 @@ function ResultScreen({ name, reading, openSheet }) {
   const nick = `${name}쨩`;
 
   return (
-    <main className="gs-page gs-page-pad gs-result">
+    <>
+      {/* 네이버 웹툰 뷰어 스타일 상단 바 */}
+      <header className="gs-wt-viewer-bar">
+        <span className="gs-wt-viewer-label">갸루사주 · 심야 점집</span>
+        <span className="gs-wt-viewer-sub">✦ {nick}의 운명 풀이 ✦</span>
+      </header>
+    <main className="gs-wt-viewer-page gs-page-pad gs-result">
       {/* 1컷 — 인사 (상단 머리말 + 이미지) */}
       <Cut num={1} className="gs-wt-photo-cut">
         <div className="gs-wt-greet-head">
@@ -1116,6 +1078,7 @@ function ResultScreen({ name, reading, openSheet }) {
         </div>
       </Cut>
     </main>
+    </>
   );
 }
 
@@ -2117,79 +2080,43 @@ function StyleTag() {
         .gs-hero-glow { animation: none; }
       }
 
-      /* ===== 전역 배경 덮어쓰기 (common.css 밝은 배경 제거) ===== */
+      /* ===== 전역 배경 — 앱 테마 다크 */
       html, body, #root {
-        background: #111 !important;
+        background: var(--bg) !important;
       }
 
-      /* ===== 웹툰 뷰어 인트로 — 네이버 웹툰 스타일 ===== */
-      .gs-viewer {
-        width: 100vw;
-        min-height: 100dvh;
-        background: #111;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        overflow-x: hidden;
-      }
-      .gs-viewer-bar {
+      /* ===== 결과 페이지 웹툰 뷰어 상단 바 ===== */
+      .gs-wt-viewer-bar {
         position: sticky;
         top: 0;
-        z-index: 20;
+        z-index: 30;
         width: 100%;
-        background: rgba(17,17,17,.97);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border-bottom: 1px solid #2a2a2a;
-        padding: 14px 18px;
+        max-width: 600px;
+        background: rgba(21,10,18,.96);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(255,77,157,.25);
+        padding: 12px 18px;
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: space-between;
       }
-      .gs-viewer-title {
-        font: 700 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+      .gs-wt-viewer-label {
+        font: 700 14px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
         color: #fff;
-        letter-spacing: .04em;
+        letter-spacing: .03em;
       }
-      .gs-viewer-strip {
-        width: 100%;
-        max-width: 690px;
-        display: flex;
-        flex-direction: column;
-        font-size: 0;
-        line-height: 0;
-        gap: 0;
-      }
-      .gs-viewer-img {
-        width: 100%;
-        height: auto;
-        display: block;
-        margin: 0;
-        padding: 0;
-        border: none;
-        vertical-align: bottom;
-        line-height: 0;
-      }
-      .gs-viewer-bottom {
-        width: 100%;
-        max-width: 690px;
-        padding: 44px 24px calc(56px + env(safe-area-inset-bottom));
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 14px;
-        background: #111;
-      }
-      .gs-viewer-hint {
-        margin: 0;
-        text-align: center;
-        font-size: 13px;
-        color: #555;
+      .gs-wt-viewer-sub {
+        font: 600 12px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        color: var(--pink);
         letter-spacing: .02em;
       }
-      .gs-viewer-bottom .gs-cta {
-        font-size: 18px;
-        padding-block: 17px;
+
+      /* ===== 결과 페이지 뷰어 컨테이너 ===== */
+      .gs-wt-viewer-page {
+        width: 100%;
+        max-width: 600px;
+        padding: 0 0 110px;
       }
     `}</style>
   );
