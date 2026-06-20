@@ -247,17 +247,18 @@ export default function GaruSajuNight() {
   const [reading, setReading] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [formStep, setFormStep] = useState(0);
 
   useEffect(() => {
-    const isForm = phase === "form";
-    document.documentElement.classList.toggle("gs-form-locked", isForm);
-    document.body.classList.toggle("gs-form-locked", isForm);
+    const locked = phase === "form" && formStep > 0;
+    document.documentElement.classList.toggle("gs-form-locked", locked);
+    document.body.classList.toggle("gs-form-locked", locked);
 
     return () => {
       document.documentElement.classList.remove("gs-form-locked");
       document.body.classList.remove("gs-form-locked");
     };
-  }, [phase]);
+  }, [phase, formStep]);
 
   const onChange = (k) => (e) =>
     setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
@@ -316,7 +317,7 @@ export default function GaruSajuNight() {
     <div className={`gs-root ${phase === "form" ? "gs-root-form" : "gs-root-result"}`}>
       <StyleTag />
       {phase === "form" ? (
-        <FormScreen form={form} onChange={onChange} submit={submitTest} sending={sending} error={error} />
+        <FormScreen form={form} onChange={onChange} submit={submitTest} sending={sending} error={error} onStepChange={setFormStep} />
       ) : (
         <>
           <ResultScreen name={form.name} reading={reading} openSheet={() => setSheetOpen(true)} />
@@ -388,13 +389,57 @@ function HeroVideo() {
   );
 }
 
+/* ===== 웹툰 뷰어 인트로 — 네이버 웹툰 스타일 세로 스크롤 ===== */
+const LANDING_IMAGES = [
+  landingUrl("Page_01.jpeg"),
+  landingUrl("Page_02.jpeg"),
+  landingUrl("Page_02_2.jpeg"),
+  landingUrl("Page_03.jpeg"),
+  landingUrl("Page_04.jpeg"),
+  landingUrl("Page_07.jpeg"),
+  landingUrl("Page_08.jpeg"),
+  landingUrl("Page_10.jpeg"),
+  landingUrl("Page_14.jpeg"),
+  landingUrl("Page_17.jpeg"),
+  landingUrl("Page_18.jpeg"),
+];
+
+function WebtoonIntro({ onStart }) {
+  return (
+    <div className="gs-viewer">
+      <header className="gs-viewer-bar">
+        <span className="gs-viewer-title">갸루사주 · 심야 점집</span>
+      </header>
+      <div className="gs-viewer-strip">
+        {LANDING_IMAGES.map((src, i) => (
+          <img
+            key={i}
+            className="gs-viewer-img"
+            src={src}
+            alt=""
+            loading={i < 2 ? "eager" : "lazy"}
+          />
+        ))}
+      </div>
+      <div className="gs-viewer-bottom">
+        <p className="gs-viewer-hint">✦ 스크롤을 내려서 미리보기를 봤다면 ✦</p>
+        <button className="gs-cta" onClick={onStart}>
+          유이쨩에게 사주 보러가기 ☆
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ===== 1단계: 대화형 입력 폼 — 질문 하나당 한 단계씩
    (인트로 → ①이름 → ②생일 → ③시간 → ④성별 → ⑤연애 상태 → ⑥기간 → ⑦직업 → ⑧이메일) ===== */
 const INPUT_STEPS = 8; // 인트로 제외 입력 단계 수
 
-function FormScreen({ form, onChange, submit, sending, error }) {
+function FormScreen({ form, onChange, submit, sending, error, onStepChange }) {
   const [step, setStep] = useState(0); // 0=인트로, 1=이름, 2=생일, 3=시간, 4=성별, 5=연애, 6=기간, 7=직업, 8=이메일
   const [stepError, setStepError] = useState("");
+
+  useEffect(() => { onStepChange?.(step); }, [step]);
 
   const setDigits = (key, max) => (e) =>
     onChange(key)({ target: { value: e.target.value.replace(/\D/g, "").slice(0, max), type: "text" } });
@@ -446,9 +491,11 @@ function FormScreen({ form, onChange, submit, sending, error }) {
     (step === 8 ? submit() : next());
   };
 
+  if (step === 0) return <WebtoonIntro onStart={() => setStep(1)} />;
+
   return (
     <main className="gs-page gs-form-page">
-      <header className={`gs-hero ${step > 0 ? "gs-hero-dim" : ""}`}>
+      <header className="gs-hero gs-hero-dim">
         <HeroVideo />
         <div className="gs-hero-copy">
           <h1 className="gs-title">갸루<span className="gs-title-pop">사주</span></h1>
@@ -2068,6 +2115,71 @@ function StyleTag() {
         .gs-reveal, .gs-cta, .gs-bar-fill { transition: none; }
         .gs-sheet { animation: none; }
         .gs-hero-glow { animation: none; }
+      }
+
+      /* ===== 웹툰 뷰어 인트로 — 네이버 웹툰 스타일 ===== */
+      .gs-viewer {
+        width: 100%;
+        min-height: 100dvh;
+        background: #111;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .gs-viewer-bar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        width: 100%;
+        background: rgba(17,17,17,.97);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid #2a2a2a;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .gs-viewer-title {
+        font: 700 15px 'Pretendard Variable', 'Noto Sans KR', sans-serif;
+        color: #fff;
+        letter-spacing: .04em;
+      }
+      .gs-viewer-strip {
+        width: 100%;
+        max-width: 690px;
+        display: flex;
+        flex-direction: column;
+        line-height: 0;
+      }
+      .gs-viewer-img {
+        width: 100%;
+        display: block;
+        margin: 0;
+        padding: 0;
+        border: none;
+        vertical-align: top;
+      }
+      .gs-viewer-bottom {
+        width: 100%;
+        max-width: 690px;
+        padding: 44px 24px calc(56px + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+        background: #111;
+      }
+      .gs-viewer-hint {
+        margin: 0;
+        text-align: center;
+        font-size: 13px;
+        color: #666;
+        letter-spacing: .02em;
+      }
+      .gs-viewer-bottom .gs-cta {
+        font-size: 18px;
+        padding-block: 17px;
       }
     `}</style>
   );
