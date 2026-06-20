@@ -1,0 +1,59 @@
+*, *::before, *::after {
+  margin: 0; padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  height: 100%;
+  font-size: 16px;
+  color-scheme: light;
+  background: #FAF8F9;
+}
+
+body, #root {
+  min-height: 100%;
+  min-height: 100dvh;
+  background:
+    linear-gradient(135deg, rgba(255,64,159,.035) 0 12px, transparent 12px 24px),
+    #FAF8F9;
+  color: #2F1F17;
+  font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-x: none;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  touch-action: manipulation;
+}
+
+button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: #FAF8F9; }
+::-webkit-scrollbar-thumb { background: #F4E3C1; border-radius: 2px; }
+
+.wood  { color: #52FFD8; }
+.fire  { color: #FF007F; }
+.earth { color: #EEDAA2; }
+.metal { color: #DCE7F5; }
+.water { color: #9B70FF; }
+
+@media (min-width: 431px) {
+  body {
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.035) 0 12px, transparent 12px 24px),
+      radial-gradient(circle at 50% 20%, rgba(255,64,159,.12), transparent 36%),
+      #FAF8F9;
+  }
+}
