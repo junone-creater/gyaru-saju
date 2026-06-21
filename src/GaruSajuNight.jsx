@@ -248,6 +248,17 @@ async function postToWebhook(payload) {
     console.log("[데모 모드] 웹훅 미설정 — 전송 데이터:", payload);
     return { ok: true, demo: true };
   }
+  // Google Apps Script 웹앱은 CORS 응답을 주지 않으므로 no-cors 모드 사용
+  const isAppsScript = WEBHOOK_URL.includes("script.google.com");
+  if (isAppsScript) {
+    await fetch(WEBHOOK_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(payload),
+    });
+    return { ok: true };
+  }
   const res = await fetch(WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
