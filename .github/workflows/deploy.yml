@@ -19,6 +19,8 @@ jobs:
       - run: npm install
 
       - run: npm run build
+        env:
+          VITE_MAKE_WEBHOOK_URL: ${{ secrets.VITE_MAKE_WEBHOOK_URL }}
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
